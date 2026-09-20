@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     # ── Blockchain ──────────────────────────────────────────────────────────────
     TRONGRID_KEY: str = ""           # TronGrid API key for TRON RPC access
 
+    # ── AI / LLM ────────────────────────────────────────────────────────────────
+    GEMINI_API_KEY: str = ""         # Google Gemini API key (google-genai SDK)
+    GEMINI_MODEL: str = "gemini-2.0-flash"  # Model to use for structured extraction
+
     # ── Graph Database ──────────────────────────────────────────────────────────
     NEO4J_URI: str = "bolt://localhost:7687"   # Neo4j Bolt connection URI
     NEO4J_USER: str = "neo4j"
