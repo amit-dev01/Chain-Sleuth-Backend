@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "ChainSleuth"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    CORS_ORIGINS: str = ""           # Comma-separated extra allowed origins (e.g. https://chainsleuth.onrender.com)
 
     model_config = SettingsConfigDict(
         env_file=".env",

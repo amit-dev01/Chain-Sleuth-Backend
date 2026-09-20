@@ -129,10 +129,16 @@ _CORS_ORIGINS = [
     "https://app.chainsleuth.in",
 ]
 
+if settings.CORS_ORIGINS:
+    for origin in settings.CORS_ORIGINS.split(","):
+        cleaned = origin.strip()
+        if cleaned and cleaned not in _CORS_ORIGINS:
+            _CORS_ORIGINS.append(cleaned)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins     = _CORS_ORIGINS,
-    allow_credentials = True,
+    allow_origins     = ["*"] if "*" in _CORS_ORIGINS else _CORS_ORIGINS,
+    allow_credentials = "*" not in _CORS_ORIGINS,
     allow_methods     = ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers     = ["*"],
     expose_headers    = ["X-Request-ID", "X-Trace-ID"],
