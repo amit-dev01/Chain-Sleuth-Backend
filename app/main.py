@@ -15,6 +15,7 @@ from app.core.database import (
     init_redis,
 )
 from app.api import routes_trace, routes_cases, routes_fir, routes_notice
+from app.engine.tron_tracer import close_http_client
 
 settings = get_settings()
 
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
     # Shutdown: drain all connection pools gracefully
     await close_neo4j()
     await close_redis()
+    await close_http_client()
 
 
 # ── Application ───────────────────────────────────────────────────────────────
