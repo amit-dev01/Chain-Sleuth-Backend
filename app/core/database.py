@@ -103,7 +103,7 @@ async def init_redis() -> aioredis.Redis:
     global _redis_client
     if _redis_client is None:
         _redis_client = aioredis.from_url(
-            settings.REDIS_URL,
+            settings.redis_url,
             encoding="utf-8",
             decode_responses=True,
             socket_connect_timeout=5,
@@ -111,7 +111,7 @@ async def init_redis() -> aioredis.Redis:
             retry_on_timeout=True,
             health_check_interval=30,
         )
-        log.info("Redis client initialised → %s", settings.REDIS_URL)
+        log.info("Redis client initialised → %s", settings.redis_url)
     return _redis_client
 
 

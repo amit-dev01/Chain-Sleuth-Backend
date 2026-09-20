@@ -24,6 +24,8 @@ class Settings(BaseSettings):
 
     # ── Cache / Queue ───────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
+    UPSTASH_REDIS_REST_URL: str = ""           # Optional: auto-converts to rediss:// URI
+    UPSTASH_REDIS_REST_TOKEN: str = ""         # Optional: Upstash access token / password
 
     # ── App Meta ────────────────────────────────────────────────────────────────
     APP_NAME: str = "ChainSleuth"
@@ -35,6 +37,14 @@ class Settings(BaseSettings):
     def neo4j_user(self) -> str:
         """Returns the configured username, prioritizing NEO4J_USERNAME if present."""
         return self.NEO4J_USERNAME or self.NEO4J_USER or "neo4j"
+
+    @property
+    def redis_url(self) -> str:
+        """Returns standard rediss:// connection URI, auto-constructed if Upstash REST credentials provided."""
+        if self.UPSTASH_REDIS_REST_URL and self.UPSTASH_REDIS_REST_TOKEN:
+            host = self.UPSTASH_REDIS_REST_URL.replace("https://", "").replace("http://", "").rstrip("/")
+            return f"rediss://default:{self.UPSTASH_REDIS_REST_TOKEN}@{host}:6379"
+        return self.REDIS_URL
 
     model_config = SettingsConfigDict(
         env_file=".env",
