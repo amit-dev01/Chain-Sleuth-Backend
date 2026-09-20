@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # ── AI / LLM ────────────────────────────────────────────────────────────────
     GEMINI_API_KEY: str = ""         # Google Gemini API key (google-genai SDK)
-    GEMINI_MODEL: str = "gemini-2.0-flash"  # Model to use for structured extraction
+    GEMINI_MODEL: str = "gemini-3.6-flash"  # Verified working model on Google GenAI SDK
 
     # ── Graph Database ──────────────────────────────────────────────────────────
     NEO4J_URI: str = "bolt://localhost:7687"   # Neo4j Bolt/Aura connection URI

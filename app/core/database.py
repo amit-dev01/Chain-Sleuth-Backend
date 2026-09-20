@@ -478,6 +478,7 @@ async def save_trace_result(trace_result: dict[str, Any]) -> None:
             c.node_count         = $nodeCount,
             c.edge_count         = $edgeCount,
             c.attributed_vasp    = $attributedVasp,
+            c.attribution_json   = $attributionJson,
             c.created_at         = datetime()
         ON MATCH SET
             c.overall_risk_score = $overallRiskScore,
@@ -485,8 +486,12 @@ async def save_trace_result(trace_result: dict[str, Any]) -> None:
             c.node_count         = $nodeCount,
             c.edge_count         = $edgeCount,
             c.attributed_vasp    = $attributedVasp,
+            c.attribution_json   = $attributionJson,
             c.updated_at         = datetime()
     """
+    attr_data = trace_result.get("attribution")
+    attr_json = json.dumps(attr_data, default=str) if attr_data else None
+
     async with get_session() as session:
         await session.run(
             cypher,
@@ -498,6 +503,7 @@ async def save_trace_result(trace_result: dict[str, Any]) -> None:
             nodeCount       = trace_result.get("node_count", 0),
             edgeCount       = trace_result.get("edge_count", 0),
             attributedVasp  = trace_result.get("attributed_vasp"),
+            attributionJson = attr_json,
         )
 
 
@@ -522,8 +528,8 @@ async def get_case_by_id(case_id: str) -> dict[str, Any] | None:
         OPTIONAL MATCH path = (root)-[:TRANSFER*1..10]->(w:Wallet)
         OPTIONAL MATCH (root)-[t:TRANSFER]->(w2:Wallet)
         RETURN c,
-               collect(DISTINCT properties(w))  AS neighbor_nodes,
-               collect(DISTINCT properties(t))  AS transfer_edges
+                collect(DISTINCT properties(w))  AS neighbor_nodes,
+                collect(DISTINCT properties(t))  AS transfer_edges
         LIMIT 1
     """
 
@@ -538,6 +544,14 @@ async def get_case_by_id(case_id: str) -> dict[str, Any] | None:
     nodes_raw  = [n for n in record["neighbor_nodes"] if n]
     edges_raw  = [e for e in record["transfer_edges"] if e]
 
+    attribution_val = None
+    raw_attr = case_props.get("attribution_json")
+    if raw_attr:
+        try:
+            attribution_val = json.loads(raw_attr) if isinstance(raw_attr, str) else raw_attr
+        except Exception as exc:
+            log.warning("Could not parse attribution_json for case %s: %s", case_id, exc)
+
     payload = {
         "case_id":            case_props.get("case_id", case_id),
         "suspect_address":    case_props.get("suspect_address", ""),
@@ -546,7 +560,7 @@ async def get_case_by_id(case_id: str) -> dict[str, Any] | None:
         "status":             case_props.get("status", "completed"),
         "nodes":              nodes_raw,
         "edges":              edges_raw,
-        "attribution":        None,
+        "attribution":        attribution_val,
         "created_at":         str(case_props.get("created_at", "")),
     }
 

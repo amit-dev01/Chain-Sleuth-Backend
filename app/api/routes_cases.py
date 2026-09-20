@@ -13,7 +13,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.database import get_case_by_id, list_cases as db_list_cases
-from app.models.schemas import CaseSummary, TraceResult, WalletNode, TransferEdge
+from app.models.schemas import CaseSummary, TraceResult, WalletNode, TransferEdge, VASPAttribution
 
 log    = logging.getLogger(__name__)
 router = APIRouter(prefix="/cases", tags=["Cases"])
@@ -101,13 +101,22 @@ async def get_case(case_id: str) -> TraceResult:
     except (ValueError, AttributeError):
         created_at = datetime.now(timezone.utc)
 
+    # Reconstruct VASP attribution if present in stored case
+    attribution: VASPAttribution | None = None
+    raw_attr = data.get("attribution")
+    if raw_attr and isinstance(raw_attr, dict):
+        try:
+            attribution = VASPAttribution.model_validate(raw_attr)
+        except Exception as exc:
+            log.warning("Could not reconstruct VASPAttribution for case %s: %s", case_id, exc)
+
     return TraceResult(
         case_id            = data["case_id"],
         suspect_address    = data["suspect_address"],
         chain              = data["chain"],
         nodes              = nodes,
         edges              = edges,
-        attribution        = None,
+        attribution        = attribution,
         overall_risk_score = int(data.get("overall_risk_score", 0)),
         created_at         = created_at,
         status             = data.get("status", "completed"),
@@ -146,16 +155,18 @@ async def list_all_cases(
             except (ValueError, AttributeError):
                 created_at = datetime.now(timezone.utc)
 
+            vasp = raw.get("attributed_vasp")
             summaries.append(CaseSummary(
-                case_id            = raw["case_id"],
-                suspect_address    = raw["suspect_address"],
-                chain              = raw["chain"],
-                overall_risk_score = int(raw.get("overall_risk_score", 0)),
-                status             = raw.get("status", "completed"),
-                node_count         = int(raw.get("node_count", 0)),
-                edge_count         = int(raw.get("edge_count", 0)),
-                attributed_vasp    = raw.get("attributed_vasp"),
-                created_at         = created_at,
+                case_id              = raw["case_id"],
+                suspect_address      = raw["suspect_address"],
+                chain                = raw["chain"],
+                overall_risk_score   = int(raw.get("overall_risk_score", 0)),
+                status               = raw.get("status", "completed"),
+                node_count           = int(raw.get("node_count", 0)),
+                edge_count           = int(raw.get("edge_count", 0)),
+                attributed_vasp      = vasp,
+                attributed_vasp_name = vasp,
+                created_at           = created_at,
             ))
         except Exception as exc:
             log.warning("Skipping malformed case record: %s | raw=%s", exc, raw)

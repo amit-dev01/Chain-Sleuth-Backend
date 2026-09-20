@@ -301,4 +301,5 @@ class CaseSummary(BaseModel):
     node_count: int = Field(default=0, ge=0)
     edge_count: int = Field(default=0, ge=0)
     attributed_vasp: Optional[str] = None
+    attributed_vasp_name: Optional[str] = None
     created_at: datetime

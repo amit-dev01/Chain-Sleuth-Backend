@@ -129,6 +129,7 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
             "node_count":         len(result.nodes),
             "edge_count":         len(result.edges),
             "attributed_vasp":    result.attribution.vasp_name if result.attribution else None,
+            "attribution":        result.attribution.model_dump(mode="json") if result.attribution else None,
         })
     except Exception as exc:
         log.warning("Failed to persist Case node (non-fatal): %s", exc)

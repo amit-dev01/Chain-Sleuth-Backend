@@ -30,8 +30,8 @@ from app.models.schemas import LegalNoticePayload
 
 log = logging.getLogger(__name__)
 
-# Output directory for generated PDFs (use /tmp for ephemeral; swap for S3 in prod)
-OUTPUT_DIR = Path("generated_pdfs")
+# Output directory for generated PDFs (accessible via FastAPI /static/notices mount)
+OUTPUT_DIR = Path("static/notices")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Jinja2 inline template (no filesystem dependency) ────────────────────────

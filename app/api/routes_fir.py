@@ -29,11 +29,12 @@ router = APIRouter(prefix="/fir", tags=["FIR"])
 
 class ComplaintParseRequest(BaseModel):
     """Raw complaint narrative submitted for AI-powered structured extraction."""
-    complaintText: str = Field(
-        ...,
-        min_length=20,
-        description="Unstructured police complaint / FIR narrative text",
-    )
+    complaintText: str | None = Field(default=None, description="Unstructured police complaint narrative text")
+    complaint_text: str | None = Field(default=None, description="Snake_case alias for complaint text")
+
+    @property
+    def text(self) -> str:
+        return (self.complaintText or self.complaint_text or "").strip()
 
 
 class ParsedComplaintResponse(BaseModel):
@@ -130,7 +131,14 @@ async def parse_complaint(payload: ComplaintParseRequest) -> ParsedComplaintResp
       3. Parse and validate the returned JSON.
       4. Return a ParsedComplaintResponse.
     """
+    if not payload.text or len(payload.text) < 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Complaint narrative text must be at least 5 characters long.",
+        )
+
     if not settings.GEMINI_API_KEY:
+        log.warning("GEMINI_API_KEY not set — cannot parse complaint text")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="GEMINI_API_KEY is not configured. Set it in the .env file.",
@@ -142,18 +150,28 @@ async def parse_complaint(payload: ComplaintParseRequest) -> ParsedComplaintResp
         from google.genai import types as genai_types
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        prompt = _EXTRACTION_PROMPT.format(complaint_text=payload.text)
 
-        prompt = _EXTRACTION_PROMPT.format(complaint_text=payload.complaintText)
-
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
-            config=genai_types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.1,        # low temp for deterministic extraction
-                max_output_tokens=512,
-            ),
+        target_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
+        gen_config = genai_types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.1,
+            max_output_tokens=2048,
+            thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
         )
+        try:
+            response = client.models.generate_content(
+                model=target_model,
+                contents=prompt,
+                config=gen_config,
+            )
+        except Exception as model_err:
+            log.warning("Gemini model '%s' failed (%s); falling back to 'gemini-3.6-flash'", target_model, model_err)
+            response = client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=prompt,
+                config=gen_config,
+            )
 
         raw_text = response.text.strip()
         log.debug("Gemini raw output: %s", raw_text)
