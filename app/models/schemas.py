@@ -1,150 +1,259 @@
 """
-schemas.py – Shared Pydantic models (request / response DTOs) for ChainSleuth.
+schemas.py – Strict Pydantic v2 models for ChainSleuth.
+
+All models use explicit Field validations, Literal types, and aliases
+where the JSON key differs from the Python attribute name.
 """
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Optional
-from uuid import UUID, uuid4
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-# ── Enums ────────────────────────────────────────────────────────────────────
+# ── 1. Chain ─────────────────────────────────────────────────────────────────
 
-class Chain(str, Enum):
-    TRON = "tron"
-    ETHEREUM = "ethereum"
-    BSC = "bsc"
-    POLYGON = "polygon"
+Chain = Literal["tron", "solana", "ethereum"]
 
 
-class RiskLevel(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+# ── 2. TypologyFlag ──────────────────────────────────────────────────────────
+
+TypologyFlag = Literal[
+    "peeling_chain",
+    "fan_out",
+    "zero_gas_burner",
+    "first_funder_match",
+    "dex_swap",
+]
 
 
-class CaseStatus(str, Enum):
-    OPEN = "open"
-    ACTIVE = "active"
-    CLOSED = "closed"
-    ARCHIVED = "archived"
-
-
-# ── Trace ────────────────────────────────────────────────────────────────────
+# ── 3. TraceRequest ───────────────────────────────────────────────────────────
 
 class TraceRequest(BaseModel):
-    address: str = Field(..., description="Blockchain wallet address to trace")
-    chain: Chain = Chain.TRON
-    depth: int = Field(default=3, ge=1, le=10, description="Graph traversal depth")
-    include_exchange: bool = True
+    """Payload for initiating a blockchain address trace."""
 
-    @field_validator("address")
+    suspect_address: str = Field(
+        ...,
+        min_length=10,
+        description="Blockchain wallet address under investigation",
+    )
+    chain: Chain = Field(
+        ...,
+        description="Blockchain network: 'tron', 'solana', or 'ethereum'",
+    )
+    max_hops: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="Maximum graph traversal depth (1–10)",
+    )
+    value_threshold_pct: float = Field(
+        default=2.0,
+        gt=0.0,
+        le=100.0,
+        description="Minimum transfer value as % of root balance to include in graph",
+    )
+    complaint_id: Optional[str] = Field(
+        default=None,
+        description="Optional FIR / complaint reference ID to link this trace",
+    )
+
+    @field_validator("suspect_address")
     @classmethod
-    def address_not_empty(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("address must not be empty")
+    def strip_address(cls, v: str) -> str:
         return v.strip()
 
 
-class TraceNode(BaseModel):
-    address: str
-    chain: Chain
-    label: Optional[str] = None
-    risk_level: RiskLevel = RiskLevel.LOW
-    balance_usd: Optional[float] = None
-    is_exchange: bool = False
-    tags: list[str] = Field(default_factory=list)
+# ── 4. WalletNode ─────────────────────────────────────────────────────────────
+
+class WalletNode(BaseModel):
+    """A single wallet node in the transaction graph."""
+
+    address: str = Field(..., description="On-chain wallet address")
+    chain: Chain = Field(..., description="Blockchain the wallet belongs to")
+    riskScore: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        description="Composite risk score between 0 (clean) and 100 (critical)",
+    )
+    balance: float = Field(
+        ...,
+        ge=0.0,
+        description="Current balance in the native token (e.g. TRX / SOL / ETH)",
+    )
+    firstSeen: str = Field(
+        ...,
+        description="ISO-8601 datetime string of the wallet's first observed transaction",
+    )
+    typologyFlags: List[TypologyFlag] = Field(
+        default_factory=list,
+        description="List of detected crime typology patterns for this wallet",
+    )
+    isVasp: Optional[bool] = Field(
+        default=None,
+        description="True if this wallet belongs to a known VASP / exchange",
+    )
+
+    @field_validator("firstSeen")
+    @classmethod
+    def validate_iso_datetime(cls, v: str) -> str:
+        """Ensure firstSeen is a valid ISO-8601 datetime string."""
+        try:
+            datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except ValueError:
+            raise ValueError(f"firstSeen must be a valid ISO-8601 datetime string, got: '{v}'")
+        return v
 
 
-class TraceEdge(BaseModel):
-    from_address: str
-    to_address: str
-    tx_hash: str
-    amount_usd: float
-    timestamp: datetime
-    chain: Chain
+# ── 5. TransferEdge ───────────────────────────────────────────────────────────
+
+class TransferEdge(BaseModel):
+    """A directional on-chain transfer between two wallets."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    txHash: str = Field(..., description="On-chain transaction hash")
+    from_address: str = Field(
+        ...,
+        alias="from",
+        description="Sender wallet address",
+    )
+    to_address: str = Field(
+        ...,
+        alias="to",
+        description="Recipient wallet address",
+    )
+    value: float = Field(
+        ...,
+        ge=0.0,
+        description="Transfer amount in the specified token",
+    )
+    token: str = Field(
+        ...,
+        min_length=1,
+        description="Token symbol / contract identifier (e.g. 'USDT', 'TRX')",
+    )
+    timestamp: datetime = Field(
+        ...,
+        description="UTC datetime when the transaction was confirmed on-chain",
+    )
 
 
-class TraceResponse(BaseModel):
-    trace_id: UUID = Field(default_factory=uuid4)
-    root_address: str
-    chain: Chain
-    depth: int
-    nodes: list[TraceNode] = Field(default_factory=list)
-    edges: list[TraceEdge] = Field(default_factory=list)
-    risk_summary: dict[str, Any] = Field(default_factory=dict)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+# ── 6. VASPAttribution ───────────────────────────────────────────────────────
+
+class VASPAttribution(BaseModel):
+    """Attribution details for a Virtual Asset Service Provider (VASP / exchange)."""
+
+    vasp_name: str = Field(
+        ...,
+        min_length=1,
+        description="Legal / trade name of the VASP (e.g. 'Binance', 'WazirX')",
+    )
+    is_fiu_registered: bool = Field(
+        ...,
+        description="Whether the VASP is registered with India's FIU-IND",
+    )
+    confidence_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Attribution confidence from 0.0 (uncertain) to 1.0 (certain)",
+    )
+    deposit_address: str = Field(
+        ...,
+        description="Suspect's deposit address at the VASP",
+    )
+    hot_wallet_address: str = Field(
+        ...,
+        description="VASP's identified hot wallet address",
+    )
+    nodal_officer_email: str = Field(
+        ...,
+        description="Email address of the VASP's designated nodal / compliance officer",
+    )
+    nodal_officer_phone: Optional[str] = Field(
+        default=None,
+        description="Phone number of the VASP's nodal officer (optional)",
+    )
 
 
-# ── Cases ────────────────────────────────────────────────────────────────────
+# ── 7. TraceResult ────────────────────────────────────────────────────────────
 
-class CaseCreate(BaseModel):
-    title: str = Field(..., min_length=3, max_length=200)
-    description: Optional[str] = None
-    suspect_addresses: list[str] = Field(default_factory=list)
-    chain: Chain = Chain.TRON
-    assigned_officer: Optional[str] = None
+class TraceResult(BaseModel):
+    """Full result of a completed blockchain trace operation."""
 
-
-class CaseResponse(BaseModel):
-    case_id: UUID = Field(default_factory=uuid4)
-    title: str
-    description: Optional[str] = None
-    status: CaseStatus = CaseStatus.OPEN
-    suspect_addresses: list[str]
-    chain: Chain
-    assigned_officer: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-# ── FIR ─────────────────────────────────────────────────────────────────────
-
-class FIRCreate(BaseModel):
-    case_id: UUID
-    complainant_name: str
-    complainant_designation: str
-    incident_description: str
-    suspect_addresses: list[str] = Field(default_factory=list)
-    estimated_loss_inr: Optional[float] = None
-    date_of_incident: datetime
-
-
-class FIRResponse(BaseModel):
-    fir_id: UUID = Field(default_factory=uuid4)
-    case_id: UUID
-    fir_number: str
-    complainant_name: str
-    incident_description: str
-    suspect_addresses: list[str]
-    estimated_loss_inr: Optional[float] = None
-    date_of_incident: datetime
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
-    pdf_url: Optional[str] = None
+    case_id: str = Field(..., description="Unique case / investigation identifier")
+    suspect_address: str = Field(..., description="Root address that was traced")
+    chain: Chain = Field(..., description="Blockchain network the trace ran on")
+    nodes: List[WalletNode] = Field(
+        default_factory=list,
+        description="All wallet nodes discovered during traversal",
+    )
+    edges: List[TransferEdge] = Field(
+        default_factory=list,
+        description="All transfer edges connecting the discovered nodes",
+    )
+    attribution: Optional[VASPAttribution] = Field(
+        default=None,
+        description="VASP attribution for the suspect address, if resolved",
+    )
+    overall_risk_score: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        description="Aggregated risk score for the entire trace graph (0–100)",
+    )
+    created_at: datetime = Field(
+        ...,
+        description="UTC datetime when this trace result was generated",
+    )
+    status: str = Field(
+        ...,
+        description="Trace lifecycle status (e.g. 'pending', 'completed', 'failed')",
+    )
 
 
-# ── Legal Notice ─────────────────────────────────────────────────────────────
+# ── 8. LegalNoticePayload ─────────────────────────────────────────────────────
 
-class NoticeCreate(BaseModel):
-    case_id: UUID
-    recipient_exchange: str
-    suspect_address: str
-    chain: Chain
-    legal_basis: str = Field(default="PMLA 2002 / IT Act 2000")
-    requesting_authority: str
+class LegalNoticePayload(BaseModel):
+    """Payload used to generate a legal notice addressed to a VASP."""
 
+    case_number: str = Field(
+        ...,
+        min_length=1,
+        description="Official FIR / case reference number",
+    )
+    suspect_address: str = Field(
+        ...,
+        description="On-chain address of the suspect named in the notice",
+    )
+    attributed_vasp: VASPAttribution = Field(
+        ...,
+        description="Full VASP attribution details for the notice recipient",
+    )
+    loss_amount_inr: float = Field(
+        ...,
+        gt=0.0,
+        description="Estimated financial loss in Indian Rupees (INR)",
+    )
+    flow_summary: str = Field(
+        ...,
+        min_length=10,
+        description="Human-readable summary of the transaction flow for the notice body",
+    )
+    sha256_evidence_hash: str = Field(
+        ...,
+        min_length=64,
+        max_length=64,
+        description="SHA-256 hex digest of the evidence bundle for chain-of-custody",
+    )
 
-class NoticeResponse(BaseModel):
-    notice_id: UUID = Field(default_factory=uuid4)
-    case_id: UUID
-    recipient_exchange: str
-    suspect_address: str
-    chain: Chain
-    legal_basis: str
-    requesting_authority: str
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
-    pdf_url: Optional[str] = None
+    @field_validator("sha256_evidence_hash")
+    @classmethod
+    def validate_sha256_hex(cls, v: str) -> str:
+        """Ensure the hash is a valid lowercase 64-char hex string."""
+        if not all(c in "0123456789abcdef" for c in v.lower()):
+            raise ValueError("sha256_evidence_hash must be a valid hexadecimal string")
+        return v.lower()
