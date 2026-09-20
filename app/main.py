@@ -7,7 +7,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.core.database import close_neo4j_driver, close_redis, get_neo4j_driver, get_redis
+from app.core.database import (
+    close_neo4j,
+    close_redis,
+    ensure_schema,
+    init_neo4j,
+    init_redis,
+)
 from app.api import routes_trace, routes_cases, routes_fir, routes_notice
 
 settings = get_settings()
@@ -18,12 +24,13 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle manager."""
-    # Startup: eagerly initialise DB connections
-    await get_neo4j_driver()
-    await get_redis()
+    # Startup: initialise connection pools then bootstrap graph schema
+    await init_neo4j()
+    await init_redis()
+    await ensure_schema()
     yield
-    # Shutdown: gracefully close all connections
-    await close_neo4j_driver()
+    # Shutdown: drain all connection pools gracefully
+    await close_neo4j()
     await close_redis()
 
 
