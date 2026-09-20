@@ -450,3 +450,137 @@ async def find_shortest_path_to_vasp(
         len(neo4j_path.relationships),
     )
     return result_payload
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Case persistence & retrieval
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def save_trace_result(trace_result: dict[str, Any]) -> None:
+    """
+    Persist a TraceResult summary as a :Case node in Neo4j.
+
+    The Case node stores top-level metadata; the full graph (Wallet nodes
+    + TRANSFER edges) is already written by the BFS engine helpers.
+    """
+    cypher = """
+        MERGE (c:Case {case_id: $caseId})
+        ON CREATE SET
+            c.suspect_address    = $suspectAddress,
+            c.chain              = $chain,
+            c.overall_risk_score = $overallRiskScore,
+            c.status             = $status,
+            c.node_count         = $nodeCount,
+            c.edge_count         = $edgeCount,
+            c.attributed_vasp    = $attributedVasp,
+            c.created_at         = datetime()
+        ON MATCH SET
+            c.overall_risk_score = $overallRiskScore,
+            c.status             = $status,
+            c.node_count         = $nodeCount,
+            c.edge_count         = $edgeCount,
+            c.attributed_vasp    = $attributedVasp,
+            c.updated_at         = datetime()
+    """
+    async with get_session() as session:
+        await session.run(
+            cypher,
+            caseId          = trace_result["case_id"],
+            suspectAddress  = trace_result["suspect_address"],
+            chain           = trace_result["chain"],
+            overallRiskScore= trace_result["overall_risk_score"],
+            status          = trace_result["status"],
+            nodeCount       = trace_result.get("node_count", 0),
+            edgeCount       = trace_result.get("edge_count", 0),
+            attributedVasp  = trace_result.get("attributed_vasp"),
+        )
+
+
+async def get_case_by_id(case_id: str) -> dict[str, Any] | None:
+    """
+    Fetch a stored TraceResult from Neo4j by case_id.
+
+    Reconstructs the full graph: Case metadata + all Wallet nodes
+    reachable via TRANSFER edges from the suspect address.
+
+    Returns a dict compatible with TraceResult, or None if not found.
+    """
+    cache_key = f"case:{case_id}"
+    cached = await cache_get(cache_key)
+    if cached is not None:
+        log.debug("Cache HIT for case: %s", case_id)
+        return cached
+
+    cypher = """
+        MATCH (c:Case {case_id: $caseId})
+        OPTIONAL MATCH (root:Wallet {address: c.suspect_address, chain: c.chain})
+        OPTIONAL MATCH path = (root)-[:TRANSFER*1..10]->(w:Wallet)
+        OPTIONAL MATCH (root)-[t:TRANSFER]->(w2:Wallet)
+        RETURN c,
+               collect(DISTINCT properties(w))  AS neighbor_nodes,
+               collect(DISTINCT properties(t))  AS transfer_edges
+        LIMIT 1
+    """
+
+    async with get_session() as session:
+        result = await session.run(cypher, caseId=case_id)
+        record = await result.single()
+
+    if record is None:
+        return None
+
+    case_props = dict(record["c"])
+    nodes_raw  = [n for n in record["neighbor_nodes"] if n]
+    edges_raw  = [e for e in record["transfer_edges"] if e]
+
+    payload = {
+        "case_id":            case_props.get("case_id", case_id),
+        "suspect_address":    case_props.get("suspect_address", ""),
+        "chain":              case_props.get("chain", "tron"),
+        "overall_risk_score": case_props.get("overall_risk_score", 0),
+        "status":             case_props.get("status", "completed"),
+        "nodes":              nodes_raw,
+        "edges":              edges_raw,
+        "attribution":        None,
+        "created_at":         str(case_props.get("created_at", "")),
+    }
+
+    await cache_set(cache_key, payload, ttl=120)
+    return payload
+
+
+async def list_cases(skip: int = 0, limit: int = 20) -> list[dict[str, Any]]:
+    """
+    Return a paginated list of Case summaries for the dashboard.
+
+    Each dict maps to a CaseSummary model:
+      case_id, suspect_address, chain, overall_risk_score, status,
+      node_count, edge_count, attributed_vasp, created_at.
+    """
+    cypher = """
+        MATCH (c:Case)
+        RETURN c
+        ORDER BY c.created_at DESC
+        SKIP $skip
+        LIMIT $limit
+    """
+    async with get_session() as session:
+        result = await session.run(cypher, skip=skip, limit=limit)
+        records = await result.data()
+
+    summaries = []
+    for rec in records:
+        c = rec.get("c", {})
+        summaries.append({
+            "case_id":            c.get("case_id", ""),
+            "suspect_address":    c.get("suspect_address", ""),
+            "chain":              c.get("chain", "tron"),
+            "overall_risk_score": c.get("overall_risk_score", 0),
+            "status":             c.get("status", "completed"),
+            "node_count":         c.get("node_count", 0),
+            "edge_count":         c.get("edge_count", 0),
+            "attributed_vasp":    c.get("attributed_vasp"),
+            "created_at":         str(c.get("created_at", "")),
+        })
+    return summaries
+

@@ -257,3 +257,48 @@ class LegalNoticePayload(BaseModel):
         if not all(c in "0123456789abcdef" for c in v.lower()):
             raise ValueError("sha256_evidence_hash must be a valid hexadecimal string")
         return v.lower()
+
+
+# ── 9. FIRCreate / FIRResponse ────────────────────────────────────────────────
+
+class FIRCreate(BaseModel):
+    """Payload for generating a blockchain FIR document."""
+
+    case_id: str = Field(..., description="Investigation case identifier")
+    complainant_name: str = Field(..., min_length=2)
+    complainant_designation: str = Field(..., min_length=2)
+    incident_description: str = Field(..., min_length=20)
+    suspect_addresses: List[str] = Field(default_factory=list)
+    estimated_loss_inr: Optional[float] = Field(default=None, gt=0)
+    date_of_incident: datetime
+
+
+class FIRResponse(BaseModel):
+    """Response after FIR document generation."""
+
+    fir_id: str = Field(..., description="Unique FIR document ID")
+    case_id: str
+    fir_number: str
+    complainant_name: str
+    incident_description: str
+    suspect_addresses: List[str]
+    estimated_loss_inr: Optional[float] = None
+    date_of_incident: datetime
+    generated_at: datetime
+    pdf_url: Optional[str] = None
+
+
+# ── 10. CaseSummary (dashboard list item) ────────────────────────────────────
+
+class CaseSummary(BaseModel):
+    """Lightweight case summary for dashboard listing."""
+
+    case_id: str
+    suspect_address: str
+    chain: Chain
+    overall_risk_score: int = Field(..., ge=0, le=100)
+    status: str
+    node_count: int = Field(default=0, ge=0)
+    edge_count: int = Field(default=0, ge=0)
+    attributed_vasp: Optional[str] = None
+    created_at: datetime
