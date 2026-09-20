@@ -45,7 +45,7 @@ async def init_neo4j() -> AsyncDriver:
     if _neo4j_driver is None:
         _neo4j_driver = AsyncGraphDatabase.driver(
             settings.NEO4J_URI,
-            auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
+            auth=(settings.neo4j_user, settings.NEO4J_PASSWORD),
             # ── Connection pool settings ──────────────────────────────────
             max_connection_pool_size=50,       # concurrent bolt connections
             connection_timeout=10.0,            # seconds to establish connection
@@ -54,7 +54,7 @@ async def init_neo4j() -> AsyncDriver:
             # ── Driver-level notifications ────────────────────────────────
             notifications_min_severity="WARNING",
         )
-        log.info("Neo4j AsyncDriver initialised → %s", settings.NEO4J_URI)
+        log.info("Neo4j AsyncDriver initialised → %s (user: %s)", settings.NEO4J_URI, settings.neo4j_user)
     return _neo4j_driver
 
 
@@ -69,7 +69,7 @@ async def close_neo4j() -> None:
 
 @asynccontextmanager
 async def get_session(
-    database: str = "neo4j",
+    database: Optional[str] = None,
     fetch_size: int = 1000,
 ) -> AsyncGenerator[AsyncSession, None]:
     """
@@ -81,7 +81,12 @@ async def get_session(
             result = await session.run(...)
     """
     driver = await init_neo4j()
-    async with driver.session(database=database, fetch_size=fetch_size) as session:
+    target_db = database or settings.NEO4J_DATABASE or None
+    session_kwargs: dict[str, Any] = {"fetch_size": fetch_size}
+    if target_db:
+        session_kwargs["database"] = target_db
+
+    async with driver.session(**session_kwargs) as session:
         yield session
 
 

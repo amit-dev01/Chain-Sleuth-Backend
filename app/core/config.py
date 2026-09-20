@@ -16,9 +16,11 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.0-flash"  # Model to use for structured extraction
 
     # ── Graph Database ──────────────────────────────────────────────────────────
-    NEO4J_URI: str = "bolt://localhost:7687"   # Neo4j Bolt connection URI
+    NEO4J_URI: str = "bolt://localhost:7687"   # Neo4j Bolt/Aura connection URI
     NEO4J_USER: str = "neo4j"
+    NEO4J_USERNAME: str = ""                   # Fallback / alias for Aura credentials
     NEO4J_PASSWORD: str = "password"
+    NEO4J_DATABASE: str = ""                   # Leave empty for server default
 
     # ── Cache / Queue ───────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -29,10 +31,16 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     CORS_ORIGINS: str = ""           # Comma-separated extra allowed origins (e.g. https://chainsleuth.onrender.com)
 
+    @property
+    def neo4j_user(self) -> str:
+        """Returns the configured username, prioritizing NEO4J_USERNAME if present."""
+        return self.NEO4J_USERNAME or self.NEO4J_USER or "neo4j"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
 
