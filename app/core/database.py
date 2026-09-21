@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import Any, AsyncGenerator, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import redis.asyncio as aioredis
 from neo4j import AsyncDriver, AsyncGraphDatabase, AsyncSession
@@ -69,7 +70,7 @@ async def close_neo4j() -> None:
 
 @asynccontextmanager
 async def get_session(
-    database: Optional[str] = None,
+    database: str | None = None,
     fetch_size: int = 1000,
 ) -> AsyncGenerator[AsyncSession, None]:
     """
@@ -180,7 +181,7 @@ async def merge_wallet_node(
     chain: str,
     risk_score: int = 0,
     balance: float = 0.0,
-    first_seen: Optional[datetime] = None,
+    first_seen: datetime | None = None,
 ) -> None:
     """
     MERGE a :Wallet node, creating it if absent or updating properties if present.
@@ -193,7 +194,7 @@ async def merge_wallet_node(
       - balance    (float) – native token balance
       - firstSeen  (str)   – ISO-8601 datetime of first observed tx
     """
-    first_seen_iso = (first_seen or datetime.now(timezone.utc)).isoformat()
+    first_seen_iso = (first_seen or datetime.now(UTC)).isoformat()
     cypher = """
         MERGE (w:Wallet {address: $address, chain: $chain})
         ON CREATE SET

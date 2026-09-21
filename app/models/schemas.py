@@ -7,10 +7,9 @@ where the JSON key differs from the Python attribute name.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # ── 1. Chain ─────────────────────────────────────────────────────────────────
 
@@ -54,7 +53,7 @@ class TraceRequest(BaseModel):
         le=100.0,
         description="Minimum transfer value as % of root balance to include in graph",
     )
-    complaint_id: Optional[str] = Field(
+    complaint_id: str | None = Field(
         default=None,
         description="Optional FIR / complaint reference ID to link this trace",
     )
@@ -87,11 +86,11 @@ class WalletNode(BaseModel):
         ...,
         description="ISO-8601 datetime string of the wallet's first observed transaction",
     )
-    typologyFlags: List[TypologyFlag] = Field(
+    typologyFlags: list[TypologyFlag] = Field(
         default_factory=list,
         description="List of detected crime typology patterns for this wallet",
     )
-    isVasp: Optional[bool] = Field(
+    isVasp: bool | None = Field(
         default=None,
         description="True if this wallet belongs to a known VASP / exchange",
     )
@@ -173,7 +172,7 @@ class VASPAttribution(BaseModel):
         ...,
         description="Email address of the VASP's designated nodal / compliance officer",
     )
-    nodal_officer_phone: Optional[str] = Field(
+    nodal_officer_phone: str | None = Field(
         default=None,
         description="Phone number of the VASP's nodal officer (optional)",
     )
@@ -187,15 +186,15 @@ class TraceResult(BaseModel):
     case_id: str = Field(..., description="Unique case / investigation identifier")
     suspect_address: str = Field(..., description="Root address that was traced")
     chain: Chain = Field(..., description="Blockchain network the trace ran on")
-    nodes: List[WalletNode] = Field(
+    nodes: list[WalletNode] = Field(
         default_factory=list,
         description="All wallet nodes discovered during traversal",
     )
-    edges: List[TransferEdge] = Field(
+    edges: list[TransferEdge] = Field(
         default_factory=list,
         description="All transfer edges connecting the discovered nodes",
     )
-    attribution: Optional[VASPAttribution] = Field(
+    attribution: VASPAttribution | None = Field(
         default=None,
         description="VASP attribution for the suspect address, if resolved",
     )
@@ -268,8 +267,8 @@ class FIRCreate(BaseModel):
     complainant_name: str = Field(..., min_length=2)
     complainant_designation: str = Field(..., min_length=2)
     incident_description: str = Field(..., min_length=20)
-    suspect_addresses: List[str] = Field(default_factory=list)
-    estimated_loss_inr: Optional[float] = Field(default=None, gt=0)
+    suspect_addresses: list[str] = Field(default_factory=list)
+    estimated_loss_inr: float | None = Field(default=None, gt=0)
     date_of_incident: datetime
 
 
@@ -281,11 +280,11 @@ class FIRResponse(BaseModel):
     fir_number: str
     complainant_name: str
     incident_description: str
-    suspect_addresses: List[str]
-    estimated_loss_inr: Optional[float] = None
+    suspect_addresses: list[str]
+    estimated_loss_inr: float | None = None
     date_of_incident: datetime
     generated_at: datetime
-    pdf_url: Optional[str] = None
+    pdf_url: str | None = None
 
 
 # ── 10. CaseSummary (dashboard list item) ────────────────────────────────────
@@ -300,6 +299,6 @@ class CaseSummary(BaseModel):
     status: str
     node_count: int = Field(default=0, ge=0)
     edge_count: int = Field(default=0, ge=0)
-    attributed_vasp: Optional[str] = None
-    attributed_vasp_name: Optional[str] = None
+    attributed_vasp: str | None = None
+    attributed_vasp_name: str | None = None
     created_at: datetime

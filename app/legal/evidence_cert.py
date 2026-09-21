@@ -21,12 +21,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from app.models.schemas import TraceResult
-
 
 # ── Canonical serialiser ──────────────────────────────────────────────────────
 
@@ -125,7 +124,7 @@ def build_evidence_certificate(
     integrity_hash = compute_evidence_hash(tx_hashes, nodes_raw)
 
     # ── Assemble certificate ──────────────────────────────────────────────────
-    generated_at = datetime.now(timezone.utc).isoformat()
+    generated_at = datetime.now(UTC).isoformat()
 
     certificate: dict[str, Any] = {
         # Identity

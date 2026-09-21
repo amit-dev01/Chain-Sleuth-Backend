@@ -11,7 +11,6 @@ GET  /api/v1/notices/{notice_id}/download
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse

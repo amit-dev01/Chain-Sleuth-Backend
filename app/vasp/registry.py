@@ -12,7 +12,6 @@ exactly 1 hop to isolate the user's KYC deposit address.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -31,7 +30,7 @@ class VASPEntry:
     tags: list[str] = field(default_factory=list)
     # Nodal / compliance officer contact details
     nodal_officer_email: str = ""
-    nodal_officer_phone: Optional[str] = None
+    nodal_officer_phone: str | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -176,12 +175,12 @@ def is_hot_wallet(address: str) -> bool:
     return address.lower() in _HOT_WALLET_INDEX
 
 
-def get_vasp_by_hot_wallet(address: str) -> Optional[VASPEntry]:
+def get_vasp_by_hot_wallet(address: str) -> VASPEntry | None:
     """Return the VASPEntry whose hot wallet matches *address*, or None."""
     return _HOT_WALLET_INDEX.get(address.lower())
 
 
-def get_vasp_by_name(name: str) -> Optional[VASPEntry]:
+def get_vasp_by_name(name: str) -> VASPEntry | None:
     """Case-insensitive lookup by VASP name key (e.g. 'binance')."""
     return VASP_REGISTRY.get(name.lower())
 

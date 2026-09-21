@@ -13,12 +13,12 @@ in-place and returns a summary dict for logging / audit trail.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from datetime import UTC
 
 import httpx
 
 from app.core.config import get_settings
-from app.models.schemas import TransferEdge, TypologyFlag, WalletNode
+from app.models.schemas import TransferEdge, WalletNode
 
 log = logging.getLogger(__name__)
 settings = get_settings()
@@ -151,7 +151,7 @@ def peeling_chain_detector(
 async def _fetch_trx_activator(
     address: str,
     api_key: str,
-) -> Optional[dict]:
+) -> dict | None:
     """
     Query TronGrid for the earliest TRX transfer that activated *address*.
 
@@ -237,9 +237,10 @@ async def first_funder_trace(
         A dict with ``"funder_addresses"`` (list of tagged funder addresses)
         and ``"zero_balance_wallets"`` (the wallets that triggered the search).
     """
+    from datetime import datetime
+
     from app.core.database import create_fee_funded_by_edge
     from app.models.schemas import WalletNode as WN
-    from datetime import datetime, timezone
 
     node_map = {n.address.lower(): n for n in nodes}
     funder_addresses: list[str]         = []
@@ -271,7 +272,7 @@ async def first_funder_trace(
                 chain        = node.chain,
                 riskScore    = 50,          # elevated: unknown funder
                 balance      = 0.0,
-                firstSeen    = datetime.now(timezone.utc).isoformat(),
+                firstSeen    = datetime.now(UTC).isoformat(),
                 typologyFlags= ["first_funder_match"],  # type: ignore[list-item]
                 isVasp       = None,
             )

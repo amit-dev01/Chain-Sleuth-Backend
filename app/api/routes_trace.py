@@ -12,12 +12,12 @@ POST /api/v1/trace
 from __future__ import annotations
 
 import logging
-from uuid import UUID
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.database import get_case_by_id, save_trace_result
-from app.engine.chain_router import DetectedChain, detect_chain, validate_address
+from app.engine.chain_router import DetectedChain, validate_address
 from app.engine.traversal import run_bfs_trace
 from app.engine.typology import first_funder_trace, peeling_chain_detector
 from app.models.schemas import TraceRequest, TraceResult
@@ -66,7 +66,7 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
         DetectedChain.ETHEREUM: "ethereum",
         DetectedChain.SOLANA:   "solana",
     }
-    if chain_map.get(detected_chain) != payload.chain:
+    if detected_chain and chain_map.get(detected_chain) != payload.chain:
         log.warning(
             "Chain mismatch: declared=%s detected=%s for address=%s. "
             "Proceeding with declared chain.",
@@ -157,7 +157,6 @@ async def get_trace(case_id: str) -> TraceResult:
             detail=f"No trace found for case_id: {case_id}",
         )
 
-    from datetime import datetime, timezone
     return TraceResult(
         case_id            = data["case_id"],
         suspect_address    = data["suspect_address"],
@@ -166,6 +165,6 @@ async def get_trace(case_id: str) -> TraceResult:
         edges              = [],
         attribution        = None,
         overall_risk_score = data["overall_risk_score"],
-        created_at         = datetime.now(timezone.utc),
+        created_at         = datetime.now(UTC),
         status             = data["status"],
     )

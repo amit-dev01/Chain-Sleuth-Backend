@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Optional
-
 
 # ── Compiled patterns ─────────────────────────────────────────────────────────
 
@@ -98,7 +96,7 @@ def assert_chain(address: str, expected: DetectedChain) -> bool:
     return detect_chain(address) == expected
 
 
-def validate_address(address: str) -> tuple[bool, Optional[DetectedChain]]:
+def validate_address(address: str) -> tuple[bool, DetectedChain | None]:
     """
     Validate an address and return ``(is_valid, detected_chain)``.
 

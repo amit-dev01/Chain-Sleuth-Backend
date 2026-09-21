@@ -12,7 +12,7 @@ Design:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 
@@ -144,7 +144,7 @@ async def fetch_usdt_transfers(
     # ── 2. Paginated fetch ────────────────────────────────────────────────────
     client = _get_http_client()
     all_transfers: list[dict[str, Any]] = []
-    fingerprint: Optional[str] = None
+    fingerprint: str | None = None
 
     for page in range(1, _MAX_PAGES + 1):
         params: dict[str, Any] = {

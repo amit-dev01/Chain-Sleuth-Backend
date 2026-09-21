@@ -7,13 +7,13 @@ GET /api/v1/cases           – Paginated CaseSummary list for the dashboard
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import List
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.core.database import get_case_by_id, list_cases as db_list_cases
-from app.models.schemas import CaseSummary, TraceResult, WalletNode, TransferEdge, VASPAttribution
+from app.core.database import get_case_by_id
+from app.core.database import list_cases as db_list_cases
+from app.models.schemas import CaseSummary, TraceResult, TransferEdge, VASPAttribution, WalletNode
 
 log    = logging.getLogger(__name__)
 router = APIRouter(prefix="/cases", tags=["Cases"])
@@ -26,12 +26,12 @@ def _build_wallet_node(raw: dict) -> WalletNode | None:
     try:
         fs = raw.get("firstSeen")
         if not fs or not isinstance(fs, str):
-            first_seen = datetime.now(timezone.utc).isoformat()
+            first_seen = datetime.now(UTC).isoformat()
         else:
             try:
                 first_seen = str(datetime.fromisoformat(str(fs).replace("Z", "+00:00")).isoformat())
             except ValueError:
-                first_seen = datetime.now(timezone.utc).isoformat()
+                first_seen = datetime.now(UTC).isoformat()
 
         return WalletNode(
             address       = str(raw.get("address", "")),
@@ -55,11 +55,11 @@ def _build_transfer_edge(raw: dict) -> TransferEdge | None:
             try:
                 timestamp = datetime.fromisoformat(ts.replace("Z", "+00:00"))
             except ValueError:
-                timestamp = datetime.now(timezone.utc)
+                timestamp = datetime.now(UTC)
         elif isinstance(ts, (int, float)):
-            timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
+            timestamp = datetime.fromtimestamp(ts, tz=UTC)
         else:
-            timestamp = datetime.now(timezone.utc)
+            timestamp = datetime.now(UTC)
 
         from_addr = raw.get("from") or raw.get("from_address") or ""
         to_addr   = raw.get("to") or raw.get("to_address") or ""
@@ -114,7 +114,7 @@ async def get_case(case_id: str) -> TraceResult:
     try:
         created_at = datetime.fromisoformat(data["created_at"].replace("Z", "+00:00"))
     except (ValueError, AttributeError):
-        created_at = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
 
     # Reconstruct VASP attribution if present in stored case
     attribution: VASPAttribution | None = None
@@ -150,7 +150,7 @@ async def get_case(case_id: str) -> TraceResult:
 
 @router.get(
     "/",
-    response_model=List[CaseSummary],
+    response_model=list[CaseSummary],
     summary="List all cases (dashboard)",
     description=(
         "Returns a paginated list of CaseSummary objects for the investigation dashboard. "
@@ -161,7 +161,7 @@ async def get_case(case_id: str) -> TraceResult:
 async def list_all_cases(
     skip:  int = Query(default=0,  ge=0,  description="Number of records to skip"),
     limit: int = Query(default=20, ge=1, le=100, description="Max records to return"),
-) -> List[CaseSummary]:
+) -> list[CaseSummary]:
     """
     Return a paginated list of CaseSummary objects from Neo4j.
 
@@ -178,7 +178,7 @@ async def list_all_cases(
             try:
                 created_at = datetime.fromisoformat(str(created_at_str).replace("Z", "+00:00"))
             except (ValueError, AttributeError):
-                created_at = datetime.now(timezone.utc)
+                created_at = datetime.now(UTC)
 
             vasp = raw.get("attributed_vasp")
             summaries.append(CaseSummary(

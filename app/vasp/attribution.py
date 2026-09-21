@@ -19,9 +19,7 @@ hot wallet, VASP metadata, and confidence score.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Optional
 
 from app.core.database import create_owned_by_vasp_edge, merge_vasp_node
 from app.models.schemas import TransferEdge, VASPAttribution, WalletNode
@@ -61,7 +59,7 @@ def _build_outbound_index(edges: list[TransferEdge]) -> dict[str, list[TransferE
 def _step_back_one_hop(
     hot_wallet_address: str,
     inbound_index: dict[str, list[TransferEdge]],
-) -> Optional[str]:
+) -> str | None:
     """
     Step back exactly 1 hop from *hot_wallet_address*.
 
@@ -105,7 +103,7 @@ async def attribute_vasp(
     suspect_address: str,
     nodes: list[WalletNode],
     edges: list[TransferEdge],
-) -> Optional[VASPAttribution]:
+) -> VASPAttribution | None:
     """
     Run the VASP attribution step-back algorithm over a completed trace graph.
 
@@ -144,7 +142,7 @@ async def attribute_vasp(
     from collections import deque
     visited:  set[str]                   = {suspect_address.lower()}
     bfs_q:    deque[tuple[str, int]]     = deque([(suspect_address, 0)])
-    hit_addr: Optional[str]              = None
+    hit_addr: str | None              = None
     hit_depth: int                       = 0
 
     while bfs_q:

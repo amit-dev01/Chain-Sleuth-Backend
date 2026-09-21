@@ -15,17 +15,15 @@ Algorithm:
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 from app.core.database import (
     batch_create_transfer_edges,
     batch_merge_wallet_nodes,
-    create_transfer_edge,
     merge_wallet_node,
 )
 from app.engine.tron_tracer import fetch_usdt_transfers, get_account_balance
@@ -56,7 +54,7 @@ def _make_wallet_node(
         chain=chain,
         riskScore=risk_score,
         balance=balance,
-        firstSeen=datetime.now(timezone.utc).isoformat(),
+        firstSeen=datetime.now(UTC).isoformat(),
         typologyFlags=[],
         isVasp=None,
     )
@@ -70,7 +68,7 @@ def _make_transfer_edge(transfer: dict) -> TransferEdge:
             "to":        transfer["to_address"],
             "value":     transfer["value"],
             "token":     transfer["token"],
-            "timestamp": datetime.fromtimestamp(transfer["timestamp"], tz=timezone.utc),
+            "timestamp": datetime.fromtimestamp(transfer["timestamp"], tz=UTC),
         }
     )
 
@@ -215,7 +213,7 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
                     "value":       transfer["value"],
                     "token":       transfer["token"],
                     "timestamp":   datetime.fromtimestamp(
-                        transfer["timestamp"], tz=timezone.utc
+                        transfer["timestamp"], tz=UTC
                     ).isoformat(),
                 })
 
@@ -254,6 +252,6 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
         edges              = list(edge_map.values()),
         attribution        = None,  # filled by vasp/attribution.py downstream
         overall_risk_score = overall_risk,
-        created_at         = datetime.now(timezone.utc),
+        created_at         = datetime.now(UTC),
         status             = "completed",
     )

@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.api import routes_cases, routes_fir, routes_notice, routes_trace
 from app.core.config import get_settings
 from app.core.database import (
     close_neo4j,
@@ -29,9 +30,7 @@ from app.core.database import (
     init_neo4j,
     init_redis,
 )
-from app.api import routes_trace, routes_cases, routes_fir, routes_notice
 from app.engine.tron_tracer import close_http_client
-from app.legal.pdf_generator import OUTPUT_DIR
 
 log      = logging.getLogger(__name__)
 settings = get_settings()
@@ -196,7 +195,9 @@ async def readiness_check() -> dict:
     Returns 200 only when all dependencies are reachable.
     """
     from fastapi import HTTPException as _HTTPException
-    from app.core.database import init_neo4j as _neo4j, init_redis as _redis
+
+    from app.core.database import init_neo4j as _neo4j
+    from app.core.database import init_redis as _redis
 
     errors: list[str] = []
 

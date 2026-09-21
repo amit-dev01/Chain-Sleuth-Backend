@@ -19,12 +19,11 @@ Legal framework:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-from jinja2 import Environment, select_autoescape
-from jinja2 import BaseLoader, TemplateNotFound
+from jinja2 import BaseLoader, Environment, TemplateNotFound, select_autoescape
 
 from app.models.schemas import LegalNoticePayload
 
@@ -459,8 +458,8 @@ async def generate_legal_notice_pdf(
         ) from exc
 
     notice_ref   = f"NOTICE-{str(uuid4()).upper()[:8]}"
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    issue_date   = datetime.now(timezone.utc).strftime("%d %B %Y")
+    generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    issue_date   = datetime.now(UTC).strftime("%d %B %Y")
 
     vasp = payload.attributed_vasp
 
