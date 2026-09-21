@@ -145,9 +145,10 @@ if settings.CORS_ORIGINS:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins     = ["*"] if "*" in _CORS_ORIGINS else _CORS_ORIGINS,
-    allow_credentials = "*" not in _CORS_ORIGINS,
-    allow_methods     = ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_origins     = _CORS_ORIGINS,
+    allow_origin_regex = r"^https?://.*",
+    allow_credentials = True,
+    allow_methods     = ["*"],
     allow_headers     = ["*"],
     expose_headers    = ["X-Request-ID", "X-Trace-ID"],
     max_age           = 600,    # preflight cache: 10 minutes
