@@ -51,13 +51,17 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
       7. Return TraceResult.
     """
     # ── 1. Address format validation ─────────────────────────────────────────
-    is_valid, detected_chain = validate_address(payload.suspect_address)
+    is_valid, detected_chain = validate_address(payload.suspect_address, declared_chain=payload.chain)
 
     if not is_valid:
+        log.warning(
+            "Address validation rejected: address='%s', declared_chain='%s'",
+            payload.suspect_address, payload.chain,
+        )
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422),
             detail=f"Unrecognised address format: '{payload.suspect_address}'. "
-                   "Expected TRON (T + 33 chars), EVM (0x + 40 hex), or Solana (Base58 32–44).",
+                   "Expected TRON (T + Base58 chars), EVM (0x + 40 hex), or Solana (Base58 32–44).",
         )
 
     # Warn if declared chain doesn't match detected format

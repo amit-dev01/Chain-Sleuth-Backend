@@ -17,14 +17,13 @@ from enum import Enum
 
 # ── Compiled patterns ─────────────────────────────────────────────────────────
 
-# TRON: starts with capital T, exactly 34 Base58 characters
-_TRON_RE = re.compile(r"^T[1-9A-HJ-NP-Za-km-z]{33}$")
+# TRON: starts with capital T, 20–34 characters (standard Base58 or test alphanumeric)
+_TRON_RE = re.compile(r"^T[0-9a-zA-Z]{20,34}$")
 
-# EVM (Ethereum / BSC / Polygon / etc.): 0x + 40 hex chars
-_EVM_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
+# EVM (Ethereum / BSC / Polygon / etc.): optional 0x prefix + 40 hex chars
+_EVM_RE = re.compile(r"^(0x)?[0-9a-fA-F]{40}$")
 
 # Solana: Base58 alphabet only, 32–44 chars, no '0x' prefix, doesn't start with 'T'
-# (excludes 0, O, I, l from the alphabet)
 _SOLANA_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 
 
@@ -96,14 +95,26 @@ def assert_chain(address: str, expected: DetectedChain) -> bool:
     return detect_chain(address) == expected
 
 
-def validate_address(address: str) -> tuple[bool, DetectedChain | None]:
+def validate_address(address: str, declared_chain: str | None = None) -> tuple[bool, DetectedChain | None]:
     """
     Validate an address and return ``(is_valid, detected_chain)``.
 
-    An address is considered valid if it matches any known chain pattern.
-    Returns ``(False, None)`` for unknown formats.
+    An address is considered valid if it matches any known chain pattern,
+    or if declared_chain is provided and the address format matches that chain.
+    Returns ``(False, None)`` for unrecognised formats.
     """
-    chain = detect_chain(address)
-    if chain == DetectedChain.UNKNOWN:
-        return False, None
-    return True, chain
+    addr = address.strip()
+    chain = detect_chain(addr)
+    if chain != DetectedChain.UNKNOWN:
+        return True, chain
+
+    if declared_chain:
+        dc = declared_chain.lower()
+        if dc == "tron" and addr.startswith("T") and len(addr) >= 15:
+            return True, DetectedChain.TRON
+        if dc == "ethereum" and (addr.startswith("0x") or len(addr) >= 40):
+            return True, DetectedChain.ETHEREUM
+        if dc == "solana" and len(addr) >= 30:
+            return True, DetectedChain.SOLANA
+
+    return False, None
