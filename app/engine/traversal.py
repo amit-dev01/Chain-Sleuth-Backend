@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.core.database import (
+    batch_create_transfer_edges,
+    batch_merge_wallet_nodes,
     create_transfer_edge,
     merge_wallet_node,
 )
@@ -178,31 +180,12 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
         )
 
         # ── Process each significant transfer ─────────────────────────────────
-        neo4j_tasks = []
+        nodes_to_merge: list[dict[str, Any]] = []
+        edges_to_create: list[dict[str, Any]] = []
 
         for transfer in significant:
             recipient = transfer["to_address"]
             tx_hash   = transfer["tx_hash"]
-
-            # ── Build / update edge ───────────────────────────────────────────
-            if tx_hash not in edge_map:
-                edge = _make_transfer_edge(transfer)
-                edge_map[tx_hash] = edge
-
-                # Write edge to Neo4j (non-blocking, collected below)
-                neo4j_tasks.append(
-                    create_transfer_edge(
-                        from_address = current_address,
-                        to_address   = recipient,
-                        chain        = chain,
-                        tx_hash      = tx_hash,
-                        value        = transfer["value"],
-                        token        = transfer["token"],
-                        timestamp    = datetime.fromtimestamp(
-                            transfer["timestamp"], tz=timezone.utc
-                        ),
-                    )
-                )
 
             # ── Build / update node ───────────────────────────────────────────
             if recipient not in node_map:
@@ -210,23 +193,48 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
                 node = _make_wallet_node(recipient, chain, bal)
                 node_map[recipient] = node
 
-                neo4j_tasks.append(
-                    merge_wallet_node(
-                        address    = recipient,
-                        chain      = chain,
-                        risk_score = node.riskScore,
-                        balance    = bal,
-                    )
-                )
+                nodes_to_merge.append({
+                    "address":   recipient,
+                    "chain":     chain,
+                    "riskScore": node.riskScore,
+                    "balance":   bal,
+                    "firstSeen": node.firstSeen,
+                })
+
+            # ── Build / update edge ───────────────────────────────────────────
+            if tx_hash not in edge_map:
+                edge = _make_transfer_edge(transfer)
+                edge_map[tx_hash] = edge
+
+                edges_to_create.append({
+                    "fromAddress": current_address,
+                    "toAddress":   recipient,
+                    "chain":       chain,
+                    "txHash":      tx_hash,
+                    "value":       transfer["value"],
+                    "token":       transfer["token"],
+                    "timestamp":   datetime.fromtimestamp(
+                        transfer["timestamp"], tz=timezone.utc
+                    ).isoformat(),
+                })
 
             # ── Enqueue recipient for next BFS level ──────────────────────────
             if recipient.lower() not in visited:
                 visited.add(recipient.lower())
                 queue.append((recipient, depth + 1))
 
-        # Flush Neo4j writes concurrently for this BFS level
-        if neo4j_tasks:
-            await asyncio.gather(*neo4j_tasks, return_exceptions=True)
+        # Write nodes first, then edges (guarantees referential integrity and eliminates deadlocks)
+        if nodes_to_merge:
+            try:
+                await batch_merge_wallet_nodes(nodes_to_merge)
+            except Exception as exc:
+                log.error("Failed to batch merge wallet nodes: %s", exc)
+
+        if edges_to_create:
+            try:
+                await batch_create_transfer_edges(edges_to_create)
+            except Exception as exc:
+                log.error("Failed to batch create transfer edges: %s", exc)
 
     # ── Compute overall risk score (simple average of node scores) ────────────
     scores = [n.riskScore for n in node_map.values()]

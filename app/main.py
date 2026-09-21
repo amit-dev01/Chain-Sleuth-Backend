@@ -67,14 +67,23 @@ async def lifespan(app: FastAPI):
     """
     log.info("━━ ChainSleuth starting up ━━")
 
-    await init_neo4j()
-    log.info("✓ Neo4j driver pool ready")
+    try:
+        await init_neo4j()
+        log.info("✓ Neo4j driver pool ready")
+    except Exception as exc:
+        log.error("Could not initialize Neo4j driver on startup: %s", exc)
 
-    await init_redis()
-    log.info("✓ Redis client ready")
+    try:
+        await init_redis()
+        log.info("✓ Redis client ready")
+    except Exception as exc:
+        log.error("Could not initialize Redis client on startup: %s", exc)
 
-    await ensure_schema()
-    log.info("✓ Neo4j schema constraints/indexes verified")
+    try:
+        await ensure_schema()
+        log.info("✓ Neo4j schema constraints/indexes verified")
+    except Exception as exc:
+        log.warning("Neo4j schema verification deferred or skipped: %s", exc)
 
     log.info("━━ ChainSleuth is ready ━━  docs → http://localhost:8000/docs")
     yield

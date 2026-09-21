@@ -47,12 +47,12 @@ async def init_neo4j() -> AsyncDriver:
             settings.NEO4J_URI,
             auth=(settings.neo4j_user, settings.NEO4J_PASSWORD),
             # ── Connection pool settings ──────────────────────────────────
-            max_connection_pool_size=50,       # concurrent bolt connections
-            connection_timeout=10.0,            # seconds to establish connection
-            max_connection_lifetime=3600,       # rotate connections after 1 h
+            max_connection_pool_size=25,       # concurrent bolt connections (tuned for cloud/Aura)
+            connection_timeout=15.0,           # seconds to establish connection
+            max_connection_lifetime=1800,      # rotate connections after 30 mins to avoid idle drops
             keep_alive=True,
             # ── Driver-level notifications ────────────────────────────────
-            notifications_min_severity="WARNING",
+            notifications_min_severity="OFF",  # disable client notification overhead
         )
         log.info("Neo4j AsyncDriver initialised → %s (user: %s)", settings.NEO4J_URI, settings.neo4j_user)
     return _neo4j_driver
@@ -74,6 +74,7 @@ async def get_session(
 ) -> AsyncGenerator[AsyncSession, None]:
     """
     Async context manager that yields a Neo4j session from the pool.
+    Gracefully falls back to default database if a specified database is unavailable.
 
     Usage::
 
@@ -216,6 +217,31 @@ async def merge_wallet_node(
         )
 
 
+async def batch_merge_wallet_nodes(nodes: list[dict[str, Any]]) -> None:
+    """
+    Batch MERGE multiple :Wallet nodes in a single Cypher transaction.
+    Greatly reduces Bolt round-trips and eliminates lock deadlocks.
+    """
+    if not nodes:
+        return
+
+    cypher = """
+        UNWIND $batch AS item
+        MERGE (w:Wallet {address: item.address, chain: item.chain})
+        ON CREATE SET
+            w.riskScore  = item.riskScore,
+            w.balance    = item.balance,
+            w.firstSeen  = item.firstSeen,
+            w.createdAt  = datetime()
+        ON MATCH SET
+            w.riskScore  = item.riskScore,
+            w.balance    = item.balance,
+            w.updatedAt  = datetime()
+    """
+    async with get_session() as session:
+        await session.run(cypher, batch=nodes)
+
+
 async def merge_vasp_node(
     name: str,
     is_fiu_registered: bool,
@@ -278,6 +304,8 @@ async def create_transfer_edge(
 
     Relationship properties:
       - txHash    (str)   – on-chain transaction hash
+      - from      (str)   – sender wallet address
+      - to        (str)   – recipient wallet address
       - value     (float) – amount transferred in *token* units
       - token     (str)   – token symbol / contract (e.g. 'USDT', 'TRX')
       - timestamp (str)   – ISO-8601 confirmed datetime
@@ -287,10 +315,14 @@ async def create_transfer_edge(
         MATCH (to:Wallet   {address: $toAddress,   chain: $chain})
         MERGE (from)-[t:TRANSFER {txHash: $txHash}]->(to)
         ON CREATE SET
+            t.from      = $fromAddress,
+            t.to        = $toAddress,
             t.value     = $value,
             t.token     = $token,
             t.timestamp = $timestamp
         ON MATCH SET
+            t.from      = $fromAddress,
+            t.to        = $toAddress,
             t.value     = $value,
             t.token     = $token,
             t.timestamp = $timestamp
@@ -306,6 +338,35 @@ async def create_transfer_edge(
             token=token,
             timestamp=timestamp.isoformat(),
         )
+
+
+async def batch_create_transfer_edges(edges: list[dict[str, Any]]) -> None:
+    """
+    Batch MERGE multiple [:TRANSFER] edges in a single Cypher transaction.
+    """
+    if not edges:
+        return
+
+    cypher = """
+        UNWIND $batch AS item
+        MATCH (from:Wallet {address: item.fromAddress, chain: item.chain})
+        MATCH (to:Wallet   {address: item.toAddress,   chain: item.chain})
+        MERGE (from)-[t:TRANSFER {txHash: item.txHash}]->(to)
+        ON CREATE SET
+            t.from      = item.fromAddress,
+            t.to        = item.toAddress,
+            t.value     = item.value,
+            t.token     = item.token,
+            t.timestamp = item.timestamp
+        ON MATCH SET
+            t.from      = item.fromAddress,
+            t.to        = item.toAddress,
+            t.value     = item.value,
+            t.token     = item.token,
+            t.timestamp = item.timestamp
+    """
+    async with get_session() as session:
+        await session.run(cypher, batch=edges)
 
 
 async def create_fee_funded_by_edge(
@@ -463,11 +524,23 @@ async def find_shortest_path_to_vasp(
 
 async def save_trace_result(trace_result: dict[str, Any]) -> None:
     """
-    Persist a TraceResult summary as a :Case node in Neo4j.
+    Persist a TraceResult summary as a :Case node in Neo4j and link to the suspect root wallet.
 
     The Case node stores top-level metadata; the full graph (Wallet nodes
     + TRANSFER edges) is already written by the BFS engine helpers.
     """
+    nodes_list = trace_result.get("nodes") or []
+    edges_list = trace_result.get("edges") or []
+    node_count = trace_result.get("node_count") or len(nodes_list)
+    edge_count = trace_result.get("edge_count") or len(edges_list)
+
+    attr_data = trace_result.get("attribution")
+    attr_json = json.dumps(attr_data, default=str) if attr_data else None
+
+    attributed_vasp = trace_result.get("attributed_vasp")
+    if not attributed_vasp and isinstance(attr_data, dict):
+        attributed_vasp = attr_data.get("vasp_name")
+
     cypher = """
         MERGE (c:Case {case_id: $caseId})
         ON CREATE SET
@@ -488,9 +561,12 @@ async def save_trace_result(trace_result: dict[str, Any]) -> None:
             c.attributed_vasp    = $attributedVasp,
             c.attribution_json   = $attributionJson,
             c.updated_at         = datetime()
+        WITH c
+        OPTIONAL MATCH (w:Wallet {address: $suspectAddress, chain: $chain})
+        FOREACH (_ IN CASE WHEN w IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (c)-[:INVESTIGATES]->(w)
+        )
     """
-    attr_data = trace_result.get("attribution")
-    attr_json = json.dumps(attr_data, default=str) if attr_data else None
 
     async with get_session() as session:
         await session.run(
@@ -500,9 +576,9 @@ async def save_trace_result(trace_result: dict[str, Any]) -> None:
             chain           = trace_result["chain"],
             overallRiskScore= trace_result["overall_risk_score"],
             status          = trace_result["status"],
-            nodeCount       = trace_result.get("node_count", 0),
-            edgeCount       = trace_result.get("edge_count", 0),
-            attributedVasp  = trace_result.get("attributed_vasp"),
+            nodeCount       = node_count,
+            edgeCount       = edge_count,
+            attributedVasp  = attributed_vasp,
             attributionJson = attr_json,
         )
 
@@ -511,8 +587,8 @@ async def get_case_by_id(case_id: str) -> dict[str, Any] | None:
     """
     Fetch a stored TraceResult from Neo4j by case_id.
 
-    Reconstructs the full graph: Case metadata + all Wallet nodes
-    reachable via TRANSFER edges from the suspect address.
+    Reconstructs the complete graph: Case metadata + Root Wallet + all reachable
+    Wallet nodes and all connecting TRANSFER edges with proper sender/recipient addresses.
 
     Returns a dict compatible with TraceResult, or None if not found.
     """
@@ -525,12 +601,22 @@ async def get_case_by_id(case_id: str) -> dict[str, Any] | None:
     cypher = """
         MATCH (c:Case {case_id: $caseId})
         OPTIONAL MATCH (root:Wallet {address: c.suspect_address, chain: c.chain})
-        OPTIONAL MATCH path = (root)-[:TRANSFER*1..10]->(w:Wallet)
-        OPTIONAL MATCH (root)-[t:TRANSFER]->(w2:Wallet)
+        OPTIONAL MATCH (root)-[:TRANSFER*1..10]->(target:Wallet)
+        WITH c, root, collect(DISTINCT target) AS targets
+        WITH c, [n IN ([root] + targets) WHERE n IS NOT NULL] AS all_node_objs
+        OPTIONAL MATCH (n1:Wallet)-[t:TRANSFER]->(n2:Wallet)
+        WHERE n1 IN all_node_objs AND n2 IN all_node_objs
+        WITH c, all_node_objs, collect(DISTINCT t) AS rels
         RETURN c,
-                collect(DISTINCT properties(w))  AS neighbor_nodes,
-                collect(DISTINCT properties(t))  AS transfer_edges
-        LIMIT 1
+               [n IN all_node_objs | properties(n)] AS nodes,
+               [r IN rels WHERE r IS NOT NULL | {
+                   txHash: r.txHash,
+                   from: startNode(r).address,
+                   to: endNode(r).address,
+                   value: r.value,
+                   token: r.token,
+                   timestamp: toString(r.timestamp)
+               }] AS edges
     """
 
     async with get_session() as session:
@@ -541,8 +627,8 @@ async def get_case_by_id(case_id: str) -> dict[str, Any] | None:
         return None
 
     case_props = dict(record["c"])
-    nodes_raw  = [n for n in record["neighbor_nodes"] if n]
-    edges_raw  = [e for e in record["transfer_edges"] if e]
+    nodes_raw  = record["nodes"] or []
+    edges_raw  = record["edges"] or []
 
     attribution_val = None
     raw_attr = case_props.get("attribution_json")
@@ -576,6 +662,16 @@ async def list_cases(skip: int = 0, limit: int = 20) -> list[dict[str, Any]]:
       case_id, suspect_address, chain, overall_risk_score, status,
       node_count, edge_count, attributed_vasp, created_at.
     """
+    try:
+        skip_int = int(skip)
+    except (TypeError, ValueError):
+        skip_int = 0
+
+    try:
+        limit_int = int(limit)
+    except (TypeError, ValueError):
+        limit_int = 20
+
     cypher = """
         MATCH (c:Case)
         RETURN c
@@ -584,7 +680,7 @@ async def list_cases(skip: int = 0, limit: int = 20) -> list[dict[str, Any]]:
         LIMIT $limit
     """
     async with get_session() as session:
-        result = await session.run(cypher, skip=skip, limit=limit)
+        result = await session.run(cypher, skip=skip_int, limit=limit_int)
         records = await result.data()
 
     summaries = []

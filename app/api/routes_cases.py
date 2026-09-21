@@ -24,13 +24,22 @@ router = APIRouter(prefix="/cases", tags=["Cases"])
 def _build_wallet_node(raw: dict) -> WalletNode | None:
     """Safely reconstruct a WalletNode from a raw Neo4j property dict."""
     try:
+        fs = raw.get("firstSeen")
+        if not fs or not isinstance(fs, str):
+            first_seen = datetime.now(timezone.utc).isoformat()
+        else:
+            try:
+                first_seen = str(datetime.fromisoformat(str(fs).replace("Z", "+00:00")).isoformat())
+            except ValueError:
+                first_seen = datetime.now(timezone.utc).isoformat()
+
         return WalletNode(
-            address       = raw.get("address", ""),
-            chain         = raw.get("chain", "tron"),
+            address       = str(raw.get("address", "")),
+            chain         = str(raw.get("chain", "tron")),
             riskScore     = int(raw.get("riskScore", 0)),
             balance       = float(raw.get("balance", 0.0)),
-            firstSeen     = raw.get("firstSeen") or datetime.now(timezone.utc).isoformat(),
-            typologyFlags = raw.get("typologyFlags", []),
+            firstSeen     = first_seen,
+            typologyFlags = raw.get("typologyFlags") or [],
             isVasp        = raw.get("isVasp"),
         )
     except Exception as exc:
@@ -43,16 +52,22 @@ def _build_transfer_edge(raw: dict) -> TransferEdge | None:
     try:
         ts = raw.get("timestamp")
         if isinstance(ts, str):
-            timestamp = datetime.fromisoformat(ts)
+            try:
+                timestamp = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                timestamp = datetime.now(timezone.utc)
         elif isinstance(ts, (int, float)):
             timestamp = datetime.fromtimestamp(ts, tz=timezone.utc)
         else:
             timestamp = datetime.now(timezone.utc)
 
+        from_addr = raw.get("from") or raw.get("from_address") or ""
+        to_addr   = raw.get("to") or raw.get("to_address") or ""
+
         return TransferEdge.model_validate({
             "txHash":    raw.get("txHash", ""),
-            "from":      raw.get("from_address", raw.get("from", "")),
-            "to":        raw.get("to_address",   raw.get("to", "")),
+            "from":      from_addr,
+            "to":        to_addr,
             "value":     float(raw.get("value", 0.0)),
             "token":     raw.get("token", "USDT"),
             "timestamp": timestamp,
@@ -106,7 +121,15 @@ async def get_case(case_id: str) -> TraceResult:
     raw_attr = data.get("attribution")
     if raw_attr and isinstance(raw_attr, dict):
         try:
-            attribution = VASPAttribution.model_validate(raw_attr)
+            attribution = VASPAttribution(
+                vasp_name           = str(raw_attr.get("vasp_name", "")),
+                is_fiu_registered   = bool(raw_attr.get("is_fiu_registered", False)),
+                confidence_score    = float(raw_attr.get("confidence_score", 0.0)),
+                deposit_address     = str(raw_attr.get("deposit_address", "")),
+                hot_wallet_address  = str(raw_attr.get("hot_wallet_address", "")),
+                nodal_officer_email = str(raw_attr.get("nodal_officer_email", "compliance@vasp.in")),
+                nodal_officer_phone = raw_attr.get("nodal_officer_phone"),
+            )
         except Exception as exc:
             log.warning("Could not reconstruct VASPAttribution for case %s: %s", case_id, exc)
 
@@ -144,7 +167,9 @@ async def list_all_cases(
 
     Ordered by ``created_at DESC`` — most recent cases first.
     """
-    raw_cases = await db_list_cases(skip=skip, limit=limit)
+    skip_val = 0 if not isinstance(skip, int) else skip
+    limit_val = 20 if not isinstance(limit, int) else limit
+    raw_cases = await db_list_cases(skip=skip_val, limit=limit_val)
 
     summaries: list[CaseSummary] = []
     for raw in raw_cases:

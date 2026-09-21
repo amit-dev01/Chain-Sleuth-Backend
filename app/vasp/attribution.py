@@ -203,23 +203,19 @@ async def attribute_vasp(
         confidence      = confidence,
     )
 
-    # ── Persist to Neo4j (non-blocking) ──────────────────────────────────────
+    # ── Persist to Neo4j (sequential to guarantee node exists before edge) ──
     try:
-        await asyncio.gather(
-            # Upsert the VASP node
-            merge_vasp_node(
-                name              = vasp_entry.name,
-                is_fiu_registered = vasp_entry.is_fiu_registered,
-                deposit_address   = deposit_address,
-                hot_wallet        = hit_addr,
-                nodal_email       = vasp_entry.nodal_officer_email,
-            ),
-            # Link deposit address wallet to the VASP
-            create_owned_by_vasp_edge(
-                wallet_address = deposit_address,
-                chain          = nodes[0].chain if nodes else "tron",
-                vasp_name      = vasp_entry.name,
-            ),
+        await merge_vasp_node(
+            name              = vasp_entry.name,
+            is_fiu_registered = vasp_entry.is_fiu_registered,
+            deposit_address   = deposit_address,
+            hot_wallet        = hit_addr,
+            nodal_email       = vasp_entry.nodal_officer_email,
+        )
+        await create_owned_by_vasp_edge(
+            wallet_address = deposit_address,
+            chain          = nodes[0].chain if nodes else "tron",
+            vasp_name      = vasp_entry.name,
         )
     except Exception as exc:
         log.error("Neo4j write failed during VASP attribution: %s", exc)
