@@ -173,7 +173,7 @@ async def parse_complaint(payload: ComplaintParseRequest) -> ParsedComplaintResp
                 config=gen_config,
             )
 
-        raw_text = response.text.strip()
+        raw_text = (response.text or "").strip()
         log.debug("Gemini raw output: %s", raw_text)
 
     except ImportError as exc:

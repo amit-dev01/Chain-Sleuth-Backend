@@ -145,6 +145,7 @@ async def fetch_usdt_transfers(
     client = _get_http_client()
     all_transfers: list[dict[str, Any]] = []
     fingerprint: str | None = None
+    page: int = 0
 
     for page in range(1, _MAX_PAGES + 1):
         params: dict[str, Any] = {

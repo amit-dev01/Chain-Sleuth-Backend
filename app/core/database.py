@@ -15,7 +15,7 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, LiteralString
 
 import redis.asyncio as aioredis
 from neo4j import AsyncDriver, AsyncGraphDatabase, AsyncSession
@@ -149,7 +149,7 @@ async def cache_delete(key: str) -> None:
 # Schema helpers – run once on startup to create constraints & indexes
 # ─────────────────────────────────────────────────────────────────────────────
 
-_SCHEMA_QUERIES = [
+_SCHEMA_QUERIES: list[LiteralString] = [
     # Wallet uniqueness constraint (also creates an index)
     "CREATE CONSTRAINT wallet_address_unique IF NOT EXISTS "
     "FOR (w:Wallet) REQUIRE (w.address, w.chain) IS UNIQUE",

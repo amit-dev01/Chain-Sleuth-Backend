@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.database import get_case_by_id
 from app.core.database import list_cases as db_list_cases
-from app.models.schemas import CaseSummary, TraceResult, TransferEdge, VASPAttribution, WalletNode
+from app.models.schemas import CaseSummary, Chain, TraceResult, TransferEdge, VASPAttribution, WalletNode
 
 log    = logging.getLogger(__name__)
 router = APIRouter(prefix="/cases", tags=["Cases"])
@@ -33,9 +33,16 @@ def _build_wallet_node(raw: dict) -> WalletNode | None:
             except ValueError:
                 first_seen = datetime.now(UTC).isoformat()
 
+        raw_chain = str(raw.get("chain", "tron")).lower()
+        chain: Chain = (
+            "solana" if raw_chain == "solana"
+            else "ethereum" if raw_chain == "ethereum"
+            else "tron"
+        )
+
         return WalletNode(
             address       = str(raw.get("address", "")),
-            chain         = str(raw.get("chain", "tron")),
+            chain         = chain,
             riskScore     = int(raw.get("riskScore", 0)),
             balance       = float(raw.get("balance", 0.0)),
             firstSeen     = first_seen,
