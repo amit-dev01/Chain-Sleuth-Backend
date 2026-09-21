@@ -1,0 +1,7 @@
+[tool.pyright]
+include = ["app"]
+extraPaths = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
