@@ -20,7 +20,7 @@ from app.core.database import get_case_by_id, save_trace_result
 from app.engine.chain_router import DetectedChain, validate_address
 from app.engine.traversal import run_bfs_trace
 from app.engine.typology import first_funder_trace, peeling_chain_detector
-from app.models.schemas import TraceRequest, TraceResult
+from app.models.schemas import Chain, TraceRequest, TraceResult
 from app.vasp.attribution import attribute_vasp
 
 log = logging.getLogger(__name__)
@@ -157,10 +157,17 @@ async def get_trace(case_id: str) -> TraceResult:
             detail=f"No trace found for case_id: {case_id}",
         )
 
+    raw_chain = str(data.get("chain", "tron")).lower()
+    chain: Chain = (
+        "solana" if raw_chain == "solana"
+        else "ethereum" if raw_chain == "ethereum"
+        else "tron"
+    )
+
     return TraceResult(
         case_id            = data["case_id"],
         suspect_address    = data["suspect_address"],
-        chain              = data["chain"],
+        chain              = chain,
         nodes              = [],    # lightweight: full nodes via /case/{id}
         edges              = [],
         attribution        = None,
