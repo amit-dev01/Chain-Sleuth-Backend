@@ -68,11 +68,15 @@ ALTER TABLE public.cases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.evidence_certificates ENABLE ROW LEVEL SECURITY;
 
 -- Allow authenticated backend access (or public read/write if using anon key in dev)
+DROP POLICY IF EXISTS "Allow service and anon access to custom_wallet_labels" ON public.custom_wallet_labels;
 CREATE POLICY "Allow service and anon access to custom_wallet_labels" ON public.custom_wallet_labels
     FOR ALL USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow service and anon access to cases" ON public.cases;
 CREATE POLICY "Allow service and anon access to cases" ON public.cases
     FOR ALL USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow service and anon access to evidence_certificates" ON public.evidence_certificates;
 CREATE POLICY "Allow service and anon access to evidence_certificates" ON public.evidence_certificates
     FOR ALL USING (true) WITH CHECK (true);
+
