@@ -22,6 +22,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api import (
+    routes_audit,
     routes_auth,
     routes_cases,
     routes_fir,
@@ -186,6 +187,8 @@ app.include_router(routes_fir.router,    prefix=_API_PREFIX)
 app.include_router(routes_notice.router, prefix=_API_PREFIX)
 app.include_router(routes_ncrp.router,   prefix=_API_PREFIX)
 app.include_router(routes_vasp.router,   prefix=_API_PREFIX)
+app.include_router(routes_audit.router,  prefix=_API_PREFIX)
+
 
 
 # ── Health & Info endpoints ────────────────────────────────────────────────────
