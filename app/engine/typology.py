@@ -23,12 +23,14 @@ from app.models.schemas import TransferEdge, WalletNode
 log = logging.getLogger(__name__)
 settings = get_settings()
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-
 # Peeling chain thresholds
 _PEEL_FORWARD_THRESHOLD = 0.85   # must forward ≥85% of received funds
 _PEEL_RETAIN_THRESHOLD  = 0.15   # must retain <15% of received funds
 _PEEL_MIN_HOPS          = 3      # chain must be at least 3 consecutive hops
+
+# Fan-out / smurfing thresholds
+_FAN_OUT_MIN_RECIPIENTS   = 3     # minimum distinct recipients
+_FAN_OUT_MIN_DISBURSE_PCT = 0.60  # must disburse ≥60% of total inbound funds
 
 # TronGrid base (reuse config)
 _TRONGRID_BASE = "https://api.trongrid.io"
@@ -309,3 +311,61 @@ async def first_funder_trace(
         "funder_addresses":     funder_addresses,
         "zero_balance_wallets": zero_balance_wallets,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Fan-Out / Smurfing Detector
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fan_out_detector(
+    nodes: list[WalletNode],
+    edges: list[TransferEdge],
+    min_recipients: int = _FAN_OUT_MIN_RECIPIENTS,
+) -> dict[str, list[str]]:
+    """
+    Detect fan-out / smurfing dispersion patterns in a trace graph.
+
+    A wallet is tagged ``fan_out`` if:
+      - It disburses funds to >= min_recipients (default 3) distinct destination wallets.
+      - Its outbound transfer volume represents a significant portion (>= 60%) of its observed inbound volume.
+      - It is not an attributed exchange hot-wallet.
+
+    Args:
+        nodes: All WalletNode objects from the trace (mutated in-place).
+        edges: All TransferEdge objects from the trace.
+        min_recipients: Minimum unique destinations to qualify as fan-out.
+
+    Returns:
+        A dict mapping ``"flagged_addresses"`` to a list of flagged wallet addresses.
+    """
+    adj = _build_adjacency(edges)
+    node_map = {n.address.lower(): n for n in nodes}
+    flagged: list[str] = []
+
+    for node in nodes:
+        if node.isVasp:
+            continue
+
+        out_edges = adj.get(node.address, [])
+        unique_recipients = {
+            e.to_address.lower() for e in out_edges
+            if e.to_address.lower() != node.address.lower()
+        }
+
+        if len(unique_recipients) >= min_recipients:
+            inbound = _total_inbound(node.address, edges)
+            outbound = _total_outbound(node.address, adj)
+
+            if inbound <= 0 or (outbound / inbound) >= _FAN_OUT_MIN_DISBURSE_PCT:
+                wallet = node_map.get(node.address.lower())
+                if wallet and "fan_out" not in wallet.typologyFlags:
+                    wallet.typologyFlags.append("fan_out")  # type: ignore[arg-type]
+                    flagged.append(node.address)
+                    log.info(
+                        "FAN-OUT (Smurfing) flagged: %s (%d outbound destinations)",
+                        node.address, len(unique_recipients),
+                    )
+
+    log.info("fan_out_detector: %d addresses flagged.", len(flagged))
+    return {"flagged_addresses": flagged}
+

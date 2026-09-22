@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import json
 import logging
-from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.legal.pdf_generator import FIR_OUTPUT_DIR, generate_fir_pdf
 from app.models.schemas import FIRCreate, FIRResponse
 
 log      = logging.getLogger(__name__)
@@ -228,10 +228,38 @@ async def generate_fir(payload: FIRCreate) -> FIRResponse:
     Produce a legally formatted FIR PDF for a given case,
     embedding transaction trails and risk evidence.
     """
-    # TODO: wire up legal.pdf_generator + evidence_cert
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="FIR PDF generation not yet implemented.",
+    from datetime import UTC, datetime
+
+    try:
+        pdf_path, fir_ref = await generate_fir_pdf(payload)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=str(exc),
+        )
+    except Exception as exc:
+        log.exception("FIR generation failed for case %s: %s", payload.case_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"FIR PDF generation error: {exc}",
+        )
+
+    pdf_url = f"/static/fir/{pdf_path.name}"
+    generated_at = datetime.now(UTC)
+
+    log.info("FIR generated: fir_number=%s case=%s path=%s", fir_ref, payload.case_id, pdf_path)
+
+    return FIRResponse(
+        fir_id               = fir_ref,
+        case_id              = payload.case_id,
+        fir_number           = fir_ref,
+        complainant_name     = payload.complainant_name,
+        incident_description = payload.incident_description,
+        suspect_addresses    = payload.suspect_addresses,
+        estimated_loss_inr   = payload.estimated_loss_inr,
+        date_of_incident     = payload.date_of_incident,
+        generated_at         = generated_at,
+        pdf_url              = pdf_url,
     )
 
 
@@ -240,10 +268,20 @@ async def generate_fir(payload: FIRCreate) -> FIRResponse:
     summary="Download a generated FIR PDF",
     response_class=FileResponse,
 )
-async def download_fir(fir_id: UUID) -> FileResponse:
+async def download_fir(fir_id: str) -> FileResponse:
     """Stream the PDF file for a previously generated FIR."""
-    # TODO: fetch PDF path from DB and stream
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="FIR PDF download not yet implemented.",
+    clean_id = fir_id.removesuffix(".pdf")
+    pdf_path = FIR_OUTPUT_DIR / f"{clean_id}.pdf"
+
+    if not pdf_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"FIR document '{fir_id}' not found. Generate it first via POST /fir/.",
+        )
+
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename=f"{clean_id}.pdf",
+        headers={"Content-Disposition": f'attachment; filename="{clean_id}.pdf"'},
     )

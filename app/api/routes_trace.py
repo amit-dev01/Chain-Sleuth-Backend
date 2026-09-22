@@ -18,8 +18,9 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.core.database import get_case_by_id, save_trace_result
 from app.engine.chain_router import DetectedChain, validate_address
+from app.engine.recommendations import generate_recommendations
 from app.engine.traversal import run_bfs_trace
-from app.engine.typology import first_funder_trace, peeling_chain_detector
+from app.engine.typology import fan_out_detector, first_funder_trace, peeling_chain_detector
 from app.models.schemas import Chain, TraceRequest, TraceResult
 from app.vasp.attribution import attribute_vasp
 
@@ -95,12 +96,14 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
 
     # ── 4. Typology detection ─────────────────────────────────────────────────
     try:
-        peel_summary   = peeling_chain_detector(result.nodes, result.edges)
-        funder_summary = await first_funder_trace(result.nodes, result.edges)
+        peel_summary    = peeling_chain_detector(result.nodes, result.edges)
+        funder_summary  = await first_funder_trace(result.nodes, result.edges)
+        fan_out_summary = fan_out_detector(result.nodes, result.edges)
         log.info(
-            "Typology: peeling_chain=%d nodes | first_funder=%d nodes",
+            "Typology: peeling_chain=%d nodes | first_funder=%d nodes | fan_out=%d nodes",
             len(peel_summary.get("flagged_addresses", [])),
             len(funder_summary.get("funder_addresses", [])),
+            len(fan_out_summary.get("flagged_addresses", [])),
         )
     except Exception as exc:
         # Non-fatal: log and continue
@@ -122,7 +125,23 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
     except Exception as exc:
         log.warning("VASP attribution failed (non-fatal): %s", exc)
 
-    # ── 6. Persist Case node ──────────────────────────────────────────────────
+    # ── 6. Generate Automated Investigative Recommendations & SLA Alert ────────
+    try:
+        recs, sla_alert = generate_recommendations(
+            nodes=result.nodes,
+            edges=result.edges,
+            attribution=result.attribution,
+            suspect_address=result.suspect_address,
+            chain=result.chain,
+        )
+        result = result.model_copy(update={
+            "recommendations": recs,
+            "sla_cashout_alert": sla_alert,
+        })
+    except Exception as exc:
+        log.warning("Failed to generate recommendations (non-fatal): %s", exc)
+
+    # ── 7. Persist Case node ──────────────────────────────────────────────────
     try:
         await save_trace_result({
             "case_id":            result.case_id,
@@ -139,8 +158,9 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
         log.warning("Failed to persist Case node (non-fatal): %s", exc)
 
     log.info(
-        "Trace complete: case_id=%s nodes=%d edges=%d risk=%d",
+        "Trace complete: case_id=%s nodes=%d edges=%d risk=%d recs=%d",
         result.case_id, len(result.nodes), len(result.edges), result.overall_risk_score,
+        len(result.recommendations),
     )
     return result
 

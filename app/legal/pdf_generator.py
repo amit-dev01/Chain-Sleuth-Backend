@@ -25,13 +25,16 @@ from uuid import uuid4
 
 from jinja2 import BaseLoader, Environment, TemplateNotFound, select_autoescape
 
-from app.models.schemas import LegalNoticePayload
+from app.models.schemas import FIRCreate, LegalNoticePayload
 
 log = logging.getLogger(__name__)
 
-# Output directory for generated PDFs (accessible via FastAPI /static/notices mount)
+# Output directory for generated PDFs (accessible via FastAPI /static mount)
 OUTPUT_DIR = Path("static/notices")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+FIR_OUTPUT_DIR = Path("static/fir")
+FIR_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Jinja2 inline template (no filesystem dependency) ────────────────────────
 
@@ -415,8 +418,190 @@ class _InlineLoader(BaseLoader):
         return src, None, lambda: True
 
 
+_FIR_TEMPLATE_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>First Information Report – Case {{ fir_number }}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600;700&family=Noto+Sans:wght@400;600&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'EB Garamond', Georgia, serif;
+      font-size: 11.5pt;
+      color: #1a1a1a;
+      background: #fff;
+      padding: 50px 65px;
+      line-height: 1.6;
+    }
+    .header {
+      text-align: center;
+      border-bottom: 3px double #1a1a1a;
+      padding-bottom: 12px;
+      margin-bottom: 18px;
+    }
+    .header h1 {
+      font-size: 14pt;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+    .header h2 {
+      font-size: 11pt;
+      font-weight: 600;
+      color: #333;
+      margin-top: 2px;
+    }
+    .header .tag {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 14px;
+      border: 1.5px solid #1a1a1a;
+      font-size: 9pt;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      font-family: 'Noto Sans', sans-serif;
+      font-weight: bold;
+    }
+    .meta-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    .meta-table td { padding: 5px 8px; vertical-align: top; font-size: 10pt; border: 1px solid #ccc; }
+    .meta-table td.label { font-weight: 600; width: 32%; color: #333; background: #f7f7f7; }
+    .meta-table td.value { color: #111; }
+    h3 {
+      font-size: 11pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 1px solid #888;
+      padding-bottom: 2px;
+      margin: 16px 0 6px;
+    }
+    p { margin-bottom: 8px; text-align: justify; }
+    .mono {
+      font-family: 'Courier New', monospace;
+      font-size: 8.5pt;
+      background: #f4f4f4;
+      border: 1px solid #ddd;
+      border-radius: 2px;
+      padding: 1px 4px;
+      word-break: break-all;
+    }
+    .sig-row { display: flex; justify-content: space-between; margin-top: 32px; }
+    .sig-col { width: 45%; }
+    .sig-line { border-top: 1px solid #333; padding-top: 4px; font-size: 9.5pt; }
+    .footer {
+      border-top: 1px solid #ccc;
+      margin-top: 24px;
+      padding-top: 6px;
+      font-size: 8pt;
+      color: #777;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="header">
+  <h2>STATE POLICE CYBER CRIME INVESTIGATION DIVISION</h2>
+  <h1>FIRST INFORMATION REPORT</h1>
+  <div class="tag">Under Section 173 BNSS 2023 / Section 154 CrPC</div>
+</div>
+
+<table class="meta-table">
+  <tr>
+    <td class="label">FIR Number</td>
+    <td class="value"><strong>{{ fir_number }}</strong></td>
+  </tr>
+  <tr>
+    <td class="label">Case Reference ID</td>
+    <td class="value">{{ case_id }}</td>
+  </tr>
+  <tr>
+    <td class="label">Police Station / Cyber Cell</td>
+    <td class="value">{{ police_station }}</td>
+  </tr>
+  <tr>
+    <td class="label">Date & Time of Occurrence</td>
+    <td class="value">{{ date_of_incident }}</td>
+  </tr>
+  <tr>
+    <td class="label">Complainant / Informant</td>
+    <td class="value">{{ complainant_name }} ({{ complainant_designation }})</td>
+  </tr>
+  <tr>
+    <td class="label">Suspect Wallet Address(es)</td>
+    <td class="value">
+      {% for addr in suspect_addresses %}
+        <span class="mono">{{ addr }}</span><br/>
+      {% else %}
+        <span class="mono">Under active forensic examination</span>
+      {% endfor %}
+    </td>
+  </tr>
+  <tr>
+    <td class="label">Estimated Financial Loss</td>
+    <td class="value">
+      {% if estimated_loss_inr %}
+        ₹ {{ "{:,.2f}".format(estimated_loss_inr) }} INR
+      {% else %}
+        Under assessment
+      {% endif %}
+    </td>
+  </tr>
+  <tr>
+    <td class="label">Statutory Provisions & Acts</td>
+    <td class="value">
+      Sections 316 / 318 Bharatiya Nyaya Sanhita (BNS) 2023 (Cheating & Criminal Breach of Trust);
+      Section 66D Information Technology Act 2000;
+      Prevention of Money Laundering Act (PMLA) 2002.
+    </td>
+  </tr>
+</table>
+
+<h3>1. Brief Narrative of Incident / Modus Operandi</h3>
+<p>{{ incident_description }}</p>
+
+<h3>2. Blockchain Intelligence & Forensic Summary</h3>
+<p>
+  Preliminary cyber forensics conducted via ChainSleuth Automated Forensic Analytics
+  indicates transfer of stolen victim assets into non-custodial intermediary transit wallets
+  exhibiting rapid smurfing, peeling-chain dispersion, and off-ramping into cryptocurrency
+  exchanges / Virtual Asset Service Providers (VASPs).
+</p>
+<p>
+  This First Information Report formally initiates criminal investigation under the Bharatiya Nagarik
+  Suraksha Sanhita (BNSS) 2023. Concurrently, Section 94 BNSS Legal Freeze Directives are being served
+  to the identified exchanges to freeze the actionable KYC deposit accounts prior to fiat dissipation.
+</p>
+
+<div class="sig-row">
+  <div class="sig-col">
+    <div class="sig-line">
+      Signature of Informant / Complainant<br/>
+      Name: {{ complainant_name }}
+    </div>
+  </div>
+  <div class="sig-col" style="text-align:right;">
+    <div class="sig-line">
+      Signature of Station House Officer (SHO)<br/>
+      Rank: Inspector of Police (Cyber Crime)<br/>
+      Date: {{ generated_at }}
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  CONFIDENTIAL — LAW ENFORCEMENT RECORD | CHAIN SLEUTH FORENSIC INTEGRATION | {{ fir_number }}
+</div>
+</body>
+</html>
+"""
+
 _jinja_env = Environment(
-    loader=_InlineLoader({"notice.html": _NOTICE_TEMPLATE_HTML}),
+    loader=_InlineLoader({
+        "notice.html": _NOTICE_TEMPLATE_HTML,
+        "fir.html": _FIR_TEMPLATE_HTML,
+    }),
     autoescape=select_autoescape(["html"]),
 )
 
@@ -510,3 +695,56 @@ async def generate_legal_notice_pdf(
         output_path, payload.case_number, vasp.vasp_name,
     )
     return output_path, notice_ref
+
+
+async def generate_fir_pdf(
+    payload: FIRCreate,
+    police_station: str = "State Cyber Crime Police Station",
+) -> tuple[Path, str]:
+    """
+    Render an official Cybercrime First Information Report (FIR) PDF from an ``FIRCreate`` payload.
+
+    Args:
+        payload: Validated FIRCreate payload.
+        police_station: Police station name.
+
+    Returns:
+        (Path to generated PDF, FIR number string)
+    """
+    try:
+        from weasyprint import HTML as WeasyprintHTML
+    except ImportError as exc:
+        raise RuntimeError(
+            "WeasyPrint is required for PDF generation. "
+            "Install it with: pip install weasyprint"
+        ) from exc
+
+    fir_ref = f"FIR-{str(uuid4()).upper()[:8]}"
+    generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    incident_date_str = payload.date_of_incident.strftime("%d %B %Y, %H:%M UTC")
+
+    context = {
+        "fir_number": fir_ref,
+        "case_id": payload.case_id,
+        "police_station": police_station,
+        "date_of_incident": incident_date_str,
+        "complainant_name": payload.complainant_name,
+        "complainant_designation": payload.complainant_designation,
+        "suspect_addresses": payload.suspect_addresses,
+        "estimated_loss_inr": payload.estimated_loss_inr,
+        "incident_description": payload.incident_description,
+        "generated_at": generated_at,
+    }
+
+    template = _jinja_env.get_template("fir.html")
+    html_content = template.render(**context)
+
+    output_path = FIR_OUTPUT_DIR / f"{fir_ref}.pdf"
+    WeasyprintHTML(string=html_content).write_pdf(str(output_path))
+
+    log.info(
+        "FIR PDF generated: %s (case=%s, fir=%s)",
+        output_path, payload.case_id, fir_ref,
+    )
+    return output_path, fir_ref
+

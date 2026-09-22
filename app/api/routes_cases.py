@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.database import get_case_by_id
 from app.core.database import list_cases as db_list_cases
+from app.engine.recommendations import generate_recommendations
 from app.models.schemas import CaseSummary, Chain, TraceResult, TransferEdge, VASPAttribution, WalletNode
 
 log    = logging.getLogger(__name__)
@@ -140,6 +141,19 @@ async def get_case(case_id: str) -> TraceResult:
         except Exception as exc:
             log.warning("Could not reconstruct VASPAttribution for case %s: %s", case_id, exc)
 
+    recs: list[str] = []
+    sla_alert: str | None = None
+    try:
+        recs, sla_alert = generate_recommendations(
+            nodes=nodes,
+            edges=edges,
+            attribution=attribution,
+            suspect_address=data["suspect_address"],
+            chain=data["chain"],
+        )
+    except Exception as exc:
+        log.warning("Could not generate recommendations for case %s: %s", case_id, exc)
+
     return TraceResult(
         case_id            = data["case_id"],
         suspect_address    = data["suspect_address"],
@@ -150,6 +164,8 @@ async def get_case(case_id: str) -> TraceResult:
         overall_risk_score = int(data.get("overall_risk_score", 0)),
         created_at         = created_at,
         status             = data.get("status", "completed"),
+        recommendations    = recs,
+        sla_cashout_alert  = sla_alert,
     )
 
 

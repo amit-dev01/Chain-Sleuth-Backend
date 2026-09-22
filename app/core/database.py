@@ -127,22 +127,32 @@ async def close_redis() -> None:
 
 
 async def cache_set(key: str, value: Any, ttl: int = _CACHE_TTL_SECONDS) -> None:
-    """Serialise *value* to JSON and store it in Redis with *ttl* seconds expiry."""
-    client = await init_redis()
-    await client.setex(key, ttl, json.dumps(value, default=str))
+    """Serialise *value* to JSON and store it in Redis with *ttl* seconds expiry (with graceful failover)."""
+    try:
+        client = await init_redis()
+        await client.setex(key, ttl, json.dumps(value, default=str))
+    except Exception as exc:
+        log.warning("Redis cache_set failed for %s (continuing without cache): %s", key, exc)
 
 
 async def cache_get(key: str) -> Any | None:
-    """Return the cached value for *key*, or None if absent / expired."""
-    client = await init_redis()
-    raw = await client.get(key)
-    return json.loads(raw) if raw is not None else None
+    """Return the cached value for *key*, or None if absent / expired / Redis unreachable."""
+    try:
+        client = await init_redis()
+        raw = await client.get(key)
+        return json.loads(raw) if raw is not None else None
+    except Exception as exc:
+        log.debug("Redis cache_get failed for %s (proceeding to live fetch): %s", key, exc)
+        return None
 
 
 async def cache_delete(key: str) -> None:
-    """Invalidate a single cache entry."""
-    client = await init_redis()
-    await client.delete(key)
+    """Invalidate a single cache entry (with graceful failover)."""
+    try:
+        client = await init_redis()
+        await client.delete(key)
+    except Exception as exc:
+        log.warning("Redis cache_delete failed for %s: %s", key, exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

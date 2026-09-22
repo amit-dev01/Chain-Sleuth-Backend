@@ -212,6 +212,14 @@ class TraceResult(BaseModel):
         ...,
         description="Trace lifecycle status (e.g. 'pending', 'completed', 'failed')",
     )
+    recommendations: list[str] = Field(
+        default_factory=list,
+        description="Automated actionable recommendations and next steps for the IO",
+    )
+    sla_cashout_alert: str | None = Field(
+        default=None,
+        description="Real-time alert indicating cash-out SLA urgency and timeline",
+    )
 
 
 # ── 8. LegalNoticePayload ─────────────────────────────────────────────────────
