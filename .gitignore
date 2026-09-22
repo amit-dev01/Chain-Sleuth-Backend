@@ -29,6 +29,12 @@ static/fir/*.pdf
 *.log
 logs/
 
+# Databases & local data
+*.sqlite
+*.sqlite3
+*.db
+app/data/*.sqlite
+
 # OS
 .DS_Store
 Thumbs.db

@@ -21,6 +21,7 @@ from app.core.database import get_case_by_id
 from app.core.database import list_cases as db_list_cases
 from app.engine.bridge_resolver import scan_edges_for_bridge_hops
 from app.engine.clustering import CaseClustersResponse, compute_case_clusters
+from app.engine.layering_analyzer import analyze_layering_and_intermediaries
 from app.engine.privacy_tracer import generate_privacy_coin_dossier
 from app.engine.recommendations import generate_recommendations
 from app.legal.pdf_generator import generate_fir_pdf, generate_section_94_pdf
@@ -321,6 +322,31 @@ async def get_case_privacy_dossier(case_id: str) -> dict[str, Any]:
     return dossier.to_dict()
 
 
+# ── GET /cases/{caseId}/layering-analysis ───────────────────────────────────
+
+@router.get(
+    "/{case_id}/layering-analysis",
+    summary="Graph path analysis & intermediary/layering wallet identification",
+    description=(
+        "Analyzes laundering graph paths from the suspect wallet to destination exchanges. "
+        "Calculates hop counts and classifies intermediary nodes into mule pass-throughs, "
+        "peeling chain nodes, aggregation consolidation points, and terminal pre-sweep deposit wallets."
+    ),
+)
+async def get_case_layering_analysis(case_id: str) -> dict[str, Any]:
+    """
+    Forensic graph path analysis and intermediary mule classification.
+    """
+    trace_result = await get_case(case_id)
+    analysis = analyze_layering_and_intermediaries(
+        case_id=case_id,
+        suspect_address=trace_result.suspect_address,
+        nodes=trace_result.nodes,
+        edges=trace_result.edges,
+    )
+    return analysis.to_dict()
+
+
 @router.get(
     "/{case_id}/export-bundle",
     summary="Export Court Evidence Package ZIP Bundle",
@@ -329,7 +355,7 @@ async def get_case_privacy_dossier(case_id: str) -> dict[str, Any]:
         "Contains Section 94 BNSS legal notice PDF, First Information Report (FIR) PDF, "
         "Section 63 BSA electronic evidence certificate JSON, complete forensic graph JSON, "
         "cross-chain bridge hops JSON, privacy coin swapper dossier JSON, "
-        "and an investigator manifest with SHA-256 integrity checksums."
+        "layering path analysis JSON, and an investigator manifest with SHA-256 integrity checksums."
     ),
 )
 async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
@@ -341,7 +367,8 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
       4. evidence_graph.json
       5. cross_chain_bridge_hops.json
       6. privacy_coin_dossier.json
-      7. README_EVIDENCE_MANIFEST.txt
+      7. layering_analysis.json
+      8. README_EVIDENCE_MANIFEST.txt
     """
     trace_result = await get_case(case_id)
     clusters = compute_case_clusters(
@@ -467,7 +494,17 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
     privacy_bytes = json.dumps(privacy_dossier.to_dict(), indent=2).encode("utf-8")
     privacy_sha256 = hashlib.sha256(privacy_bytes).hexdigest()
 
-    # 7. README Evidence Manifest
+    # 7. Layering & Intermediary Node Analysis JSON
+    layering_analysis = analyze_layering_and_intermediaries(
+        case_id=case_id,
+        suspect_address=trace_result.suspect_address,
+        nodes=trace_result.nodes,
+        edges=trace_result.edges,
+    )
+    layering_bytes = json.dumps(layering_analysis.to_dict(), indent=2).encode("utf-8")
+    layering_sha256 = hashlib.sha256(layering_bytes).hexdigest()
+
+    # 8. README Evidence Manifest
     manifest_text = (
         "=============================================================================\n"
         "CHAINSLEUTH COURT-ADMISSIBLE EVIDENCE BUNDLE\n"
@@ -497,7 +534,10 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
         "   Description: Cross-chain bridge hop tracking (Stargate, Across, Hop, Li.Fi) resolving destination chains and hashes.\n\n"
         "6. privacy_coin_dossier.json\n"
         f"   SHA-256: {privacy_sha256}\n"
-        "   Description: Privacy coin (Monero/Zcash) swapper deposit intercepts and Section 94 BNSS questionnaire.\n"
+        "   Description: Privacy coin (Monero/Zcash) swapper deposit intercepts and Section 94 BNSS questionnaire.\n\n"
+        "7. layering_analysis.json\n"
+        f"   SHA-256: {layering_sha256}\n"
+        "   Description: Graph path analysis, hop-count calculation, and intermediary mule role classification.\n"
         "=============================================================================\n"
     )
     manifest_bytes = manifest_text.encode("utf-8")
@@ -511,6 +551,7 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
         zip_file.writestr("evidence_graph.json", graph_bytes)
         zip_file.writestr("cross_chain_bridge_hops.json", bridge_bytes)
         zip_file.writestr("privacy_coin_dossier.json", privacy_bytes)
+        zip_file.writestr("layering_analysis.json", layering_bytes)
         zip_file.writestr("README_EVIDENCE_MANIFEST.txt", manifest_bytes)
 
     zip_buffer.seek(0)

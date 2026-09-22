@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     SOLANA_RPC_URL: str = "https://api.mainnet-beta.solana.com"  # Solana Mainnet JSON-RPC or Helius endpoint
     MEMPOOL_API_URL: str = "https://mempool.space/api"           # Mempool.space / Blockstream Bitcoin REST API
 
+    # ── Commercial Threat Intelligence (Optional) ────────────────────────────────
+    TRM_API_KEY: str = ""            # TRM Labs API Key for commercial VASP intelligence
+    CHAINALYSIS_API_KEY: str = ""    # Chainalysis KYT / Oracle API key
+    ELLIPTIC_API_KEY: str = ""       # Elliptic Forensics API key
+
     # ── AI / LLM ────────────────────────────────────────────────────────────────
     GEMINI_API_KEY: str = ""         # Google Gemini API key (google-genai SDK)
     GEMINI_MODEL: str = "gemini-3.6-flash"  # Verified working model on Google GenAI SDK

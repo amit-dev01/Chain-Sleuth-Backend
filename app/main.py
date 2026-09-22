@@ -21,7 +21,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import routes_cases, routes_fir, routes_ncrp, routes_notice, routes_trace
+from app.api import (
+    routes_cases,
+    routes_fir,
+    routes_ncrp,
+    routes_notice,
+    routes_trace,
+    routes_vasp,
+)
 from app.core.config import get_settings
 from app.core.database import (
     close_neo4j,
@@ -176,6 +183,7 @@ app.include_router(routes_cases.router,  prefix=_API_PREFIX)
 app.include_router(routes_fir.router,    prefix=_API_PREFIX)
 app.include_router(routes_notice.router, prefix=_API_PREFIX)
 app.include_router(routes_ncrp.router,   prefix=_API_PREFIX)
+app.include_router(routes_vasp.router,   prefix=_API_PREFIX)
 
 
 # ── Health & Info endpoints ────────────────────────────────────────────────────
