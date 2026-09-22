@@ -12,13 +12,16 @@ import json
 import logging
 import zipfile
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
 from app.core.database import get_case_by_id
 from app.core.database import list_cases as db_list_cases
+from app.engine.bridge_resolver import scan_edges_for_bridge_hops
 from app.engine.clustering import CaseClustersResponse, compute_case_clusters
+from app.engine.privacy_tracer import generate_privacy_coin_dossier
 from app.engine.recommendations import generate_recommendations
 from app.legal.pdf_generator import generate_fir_pdf, generate_section_94_pdf
 from app.models.schemas import (
@@ -267,6 +270,57 @@ async def get_case_clusters(case_id: str) -> CaseClustersResponse:
     )
 
 
+# ── GET /cases/{caseId}/bridge-hops ──────────────────────────────────────────
+
+@router.get(
+    "/{case_id}/bridge-hops",
+    summary="Detect and resolve cross-chain bridge hops for a case",
+    description=(
+        "Scans all transfer edges in the case for interactions with cross-chain bridge protocols "
+        "(Stargate, Across, Hop, Celer, Wormhole, Li.Fi, Polygon Bridge). Resolves destination chain, "
+        "destination transaction hash, and final recipient wallet address."
+    ),
+)
+async def get_case_bridge_hops(case_id: str) -> dict[str, Any]:
+    """
+    Forensic detection of cross-chain bridge movements.
+    """
+    trace_result = await get_case(case_id)
+    hops = await scan_edges_for_bridge_hops(trace_result.edges)
+    return {
+        "case_id": case_id,
+        "suspect_address": trace_result.suspect_address,
+        "chain": trace_result.chain,
+        "bridge_hop_count": len(hops),
+        "bridge_hops": [h.to_dict() for h in hops],
+    }
+
+
+# ── GET /cases/{caseId}/privacy-dossier ──────────────────────────────────────
+
+@router.get(
+    "/{case_id}/privacy-dossier",
+    summary="Generate Privacy Coin (XMR/ZEC) Swapper Interception Dossier",
+    description=(
+        "Analyzes the case graph for hops entering Instant No-KYC Swappers (FixedFloat, ChangeNOW, "
+        "SideShift.ai, SimpleSwap) used to divert funds into Monero (XMR) or Zcash (ZEC). "
+        "Generates targeted Section 94 BNSS subpoena questionnaire demanding tx_key, stealth addresses, and IP telemetry."
+    ),
+)
+async def get_case_privacy_dossier(case_id: str) -> dict[str, Any]:
+    """
+    Privacy coin off-ramp intelligence & statutory Section 94 BNSS questionnaire.
+    """
+    trace_result = await get_case(case_id)
+    dossier = generate_privacy_coin_dossier(
+        case_id=case_id,
+        suspect_address=trace_result.suspect_address,
+        nodes=trace_result.nodes,
+        edges=trace_result.edges,
+    )
+    return dossier.to_dict()
+
+
 @router.get(
     "/{case_id}/export-bundle",
     summary="Export Court Evidence Package ZIP Bundle",
@@ -274,6 +328,7 @@ async def get_case_clusters(case_id: str) -> CaseClustersResponse:
         "Assembles and downloads a court-admissible electronic evidence bundle (ZIP) for the given case. "
         "Contains Section 94 BNSS legal notice PDF, First Information Report (FIR) PDF, "
         "Section 63 BSA electronic evidence certificate JSON, complete forensic graph JSON, "
+        "cross-chain bridge hops JSON, privacy coin swapper dossier JSON, "
         "and an investigator manifest with SHA-256 integrity checksums."
     ),
 )
@@ -284,7 +339,9 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
       2. cybercrime_fir.pdf
       3. certificate_section_63_bsa.json
       4. evidence_graph.json
-      5. README_EVIDENCE_MANIFEST.txt
+      5. cross_chain_bridge_hops.json
+      6. privacy_coin_dossier.json
+      7. README_EVIDENCE_MANIFEST.txt
     """
     trace_result = await get_case(case_id)
     clusters = compute_case_clusters(
@@ -387,7 +444,30 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
     fir_bytes = fir_pdf_path.read_bytes()
     fir_sha256 = hashlib.sha256(fir_bytes).hexdigest()
 
-    # 5. README Evidence Manifest
+    # 5. Cross-Chain Bridge Hops JSON
+    bridge_hops = await scan_edges_for_bridge_hops(trace_result.edges)
+    bridge_dict = {
+        "case_id": case_id,
+        "suspect_address": trace_result.suspect_address,
+        "chain": trace_result.chain,
+        "bridge_hop_count": len(bridge_hops),
+        "bridge_hops": [h.to_dict() for h in bridge_hops],
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+    bridge_bytes = json.dumps(bridge_dict, indent=2).encode("utf-8")
+    bridge_sha256 = hashlib.sha256(bridge_bytes).hexdigest()
+
+    # 6. Privacy Coin & Swapper Subpoena Dossier JSON
+    privacy_dossier = generate_privacy_coin_dossier(
+        case_id=case_id,
+        suspect_address=trace_result.suspect_address,
+        nodes=trace_result.nodes,
+        edges=trace_result.edges,
+    )
+    privacy_bytes = json.dumps(privacy_dossier.to_dict(), indent=2).encode("utf-8")
+    privacy_sha256 = hashlib.sha256(privacy_bytes).hexdigest()
+
+    # 7. README Evidence Manifest
     manifest_text = (
         "=============================================================================\n"
         "CHAINSLEUTH COURT-ADMISSIBLE EVIDENCE BUNDLE\n"
@@ -411,7 +491,13 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
         "   Description: Electronic Record Admissibility Certificate under Section 63 BSA 2023.\n\n"
         "4. evidence_graph.json\n"
         f"   SHA-256: {graph_sha256}\n"
-        "   Description: Complete machine-readable graph dataset with cluster intelligence.\n"
+        "   Description: Complete machine-readable graph dataset with cluster intelligence.\n\n"
+        "5. cross_chain_bridge_hops.json\n"
+        f"   SHA-256: {bridge_sha256}\n"
+        "   Description: Cross-chain bridge hop tracking (Stargate, Across, Hop, Li.Fi) resolving destination chains and hashes.\n\n"
+        "6. privacy_coin_dossier.json\n"
+        f"   SHA-256: {privacy_sha256}\n"
+        "   Description: Privacy coin (Monero/Zcash) swapper deposit intercepts and Section 94 BNSS questionnaire.\n"
         "=============================================================================\n"
     )
     manifest_bytes = manifest_text.encode("utf-8")
@@ -423,6 +509,8 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
         zip_file.writestr("cybercrime_fir.pdf", fir_bytes)
         zip_file.writestr("certificate_section_63_bsa.json", cert_bytes)
         zip_file.writestr("evidence_graph.json", graph_bytes)
+        zip_file.writestr("cross_chain_bridge_hops.json", bridge_bytes)
+        zip_file.writestr("privacy_coin_dossier.json", privacy_bytes)
         zip_file.writestr("README_EVIDENCE_MANIFEST.txt", manifest_bytes)
 
     zip_buffer.seek(0)

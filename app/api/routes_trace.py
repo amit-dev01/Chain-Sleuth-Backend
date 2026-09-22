@@ -22,6 +22,7 @@ from app.engine.recommendations import generate_recommendations
 from app.engine.traversal import run_bfs_trace
 from app.engine.typology import (
     bridge_hop_detector,
+    coinjoin_mixer_detector,
     dex_swap_detector,
     fan_out_detector,
     first_funder_trace,
@@ -112,8 +113,9 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
         dex_summary       = dex_swap_detector(result.nodes, result.edges)
         sanctions_summary = ofac_sanctions_detector(result.nodes, result.edges)
         bridge_summary    = bridge_hop_detector(result.nodes, result.edges)
+        mixer_summary     = coinjoin_mixer_detector(result.nodes, result.edges)
         log.info(
-            "Typology: peeling=%d | funder=%d | fan_out=%d | burner=%d | dex_swap=%d | sanctions=%d | bridges=%d",
+            "Typology: peeling=%d | funder=%d | fan_out=%d | burner=%d | dex=%d | sanctions=%d | bridges=%d | mixers=%d",
             len(peel_summary.get("flagged_addresses", [])),
             len(funder_summary.get("funder_addresses", [])),
             len(fan_out_summary.get("flagged_addresses", [])),
@@ -121,6 +123,7 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
             len(dex_summary.get("flagged_addresses", [])),
             len(sanctions_summary.get("flagged_addresses", [])),
             len(bridge_summary.get("flagged_addresses", [])),
+            len(mixer_summary.get("flagged_addresses", [])),
         )
     except Exception as exc:
         # Non-fatal: log and continue

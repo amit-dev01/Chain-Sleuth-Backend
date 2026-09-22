@@ -536,4 +536,51 @@ def bridge_hop_detector(
     return {"flagged_addresses": flagged}
 
 
+def coinjoin_mixer_detector(
+    nodes: list[WalletNode],
+    edges: list[TransferEdge],
+) -> dict[str, list[str]]:
+    """
+    Detect Bitcoin CoinJoin / mixer anonymization patterns (Wasabi, Samourai Whirlpool).
+
+    A transaction or wallet is tagged ``coinjoin_mixer`` if:
+      - Multiple transfers share the exact same transaction hash (or originate from a mixing pool)
+        with identical equal-denomination output values (e.g., 3+ outputs with identical float value,
+        matching standard mixing denominations like 0.05 BTC, 0.1 BTC, or fixed round amounts).
+    """
+    from collections import defaultdict
+
+    tx_groups: dict[str, list[TransferEdge]] = defaultdict(list)
+    for edge in edges:
+        tx_groups[edge.tx_hash].append(edge)
+
+    node_map = {n.address.lower(): n for n in nodes}
+    flagged: list[str] = []
+
+    for tx_hash, tx_edges in tx_groups.items():
+        if len(tx_edges) >= 3:
+            val_counts: dict[float, int] = defaultdict(int)
+            for e in tx_edges:
+                val_counts[round(e.value, 4)] += 1
+
+            for val, count in val_counts.items():
+                if count >= 3:
+                    for e in tx_edges:
+                        if round(e.value, 4) == val:
+                            for addr in (e.from_address, e.to_address):
+                                wallet = node_map.get(addr.lower())
+                                if wallet and "coinjoin_mixer" not in wallet.typologyFlags:
+                                    wallet.typologyFlags.append("coinjoin_mixer")  # type: ignore[arg-type]
+                                    wallet.riskScore = max(wallet.riskScore, 95)
+                                    flagged.append(wallet.address)
+                                    log.warning(
+                                        "COINJOIN / MIXER DETECTED: %s in tx %s (denomination=%.4f)",
+                                        wallet.address, tx_hash, val,
+                                    )
+
+    log.info("coinjoin_mixer_detector: %d addresses flagged.", len(flagged))
+    return {"flagged_addresses": flagged}
+
+
+
 

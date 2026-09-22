@@ -26,6 +26,7 @@ TypologyFlag = Literal[
     "dex_swap",
     "ofac_sanctioned",
     "bridge_hop",
+    "coinjoin_mixer",
 ]
 
 
@@ -140,6 +141,11 @@ class TransferEdge(BaseModel):
         ...,
         description="UTC datetime when the transaction was confirmed on-chain",
     )
+
+    @property
+    def tx_hash(self) -> str:
+        """Alias property for txHash."""
+        return self.txHash
 
 
 # ── 6. VASPAttribution ───────────────────────────────────────────────────────

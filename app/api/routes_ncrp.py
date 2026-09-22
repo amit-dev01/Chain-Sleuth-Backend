@@ -22,6 +22,7 @@ from app.engine.chain_router import validate_address
 from app.engine.traversal import run_bfs_trace
 from app.engine.typology import (
     bridge_hop_detector,
+    coinjoin_mixer_detector,
     dex_swap_detector,
     fan_out_detector,
     first_funder_trace,
@@ -202,6 +203,7 @@ async def batch_trace_ncrp(
             dex_swap_detector(res.nodes, res.edges)
             ofac_sanctions_detector(res.nodes, res.edges)
             bridge_hop_detector(res.nodes, res.edges)
+            coinjoin_mixer_detector(res.nodes, res.edges)
 
             attr = await attribute_vasp(
                 suspect_address=complaint.suspect_wallet_address,

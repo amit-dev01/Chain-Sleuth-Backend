@@ -14,11 +14,13 @@ from typing import Any
 
 import httpx
 
+from app.core.config import get_settings
 from app.core.database import cache_get, cache_set
 
 log = logging.getLogger(__name__)
+settings = get_settings()
 
-MEMPOOL_API_BASE = "https://mempool.space/api"
+MEMPOOL_API_BASE = settings.MEMPOOL_API_URL or "https://mempool.space/api"
 BLOCKSTREAM_API_BASE = "https://blockstream.info/api"
 _CACHE_TTL = 300
 

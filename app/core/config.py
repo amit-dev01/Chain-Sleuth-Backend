@@ -9,8 +9,11 @@ class Settings(BaseSettings):
     All fields are read at startup and validated by Pydantic.
     """
 
-    # ── Blockchain ──────────────────────────────────────────────────────────────
+    # ── Blockchain & RPCs ────────────────────────────────────────────────────────
     TRONGRID_KEY: str = ""           # TronGrid API key for TRON RPC access
+    ETH_RPC_URL: str = ""            # Optional: Custom Ethereum/EVM RPC (Alchemy, Infura, or QuickNode)
+    SOLANA_RPC_URL: str = "https://api.mainnet-beta.solana.com"  # Solana Mainnet JSON-RPC or Helius endpoint
+    MEMPOOL_API_URL: str = "https://mempool.space/api"           # Mempool.space / Blockstream Bitcoin REST API
 
     # ── AI / LLM ────────────────────────────────────────────────────────────────
     GEMINI_API_KEY: str = ""         # Google Gemini API key (google-genai SDK)

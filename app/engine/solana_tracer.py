@@ -14,11 +14,13 @@ from typing import Any
 
 import httpx
 
+from app.core.config import get_settings
 from app.core.database import cache_get, cache_set
 
 log = logging.getLogger(__name__)
+settings = get_settings()
 
-SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
+SOLANA_RPC_URL = settings.SOLANA_RPC_URL or "https://api.mainnet-beta.solana.com"
 _CACHE_TTL = 300
 
 
