@@ -593,8 +593,26 @@ async def save_trace_result(trace_result: dict[str, Any]) -> None:
             attributionJson = attr_json,
         )
 
+    # Sync case metadata to Supabase Cloud PostgreSQL
+    try:
+        from app.core.supabase import is_supabase_enabled, supabase_save_case
+        if is_supabase_enabled():
+            supabase_save_case({
+                "id": trace_result.get("case_id"),
+                "title": f"Investigation - {trace_result.get('chain', '').upper()} {trace_result.get('suspect_address', '')[:10]}...",
+                "status": trace_result.get("status", "active"),
+                "chain": trace_result.get("chain", "ethereum"),
+                "root_address": trace_result.get("suspect_address", ""),
+                "node_count": node_count,
+                "edge_count": edge_count,
+                "attribution": attr_data,
+            })
+    except Exception as exc:
+        log.warning("Supabase save_case hook skipped: %s", exc)
+
 
 async def get_case_by_id(case_id: str) -> dict[str, Any] | None:
+
     """
     Fetch a stored TraceResult from Neo4j by case_id.
 

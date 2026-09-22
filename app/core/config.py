@@ -37,10 +37,17 @@ class Settings(BaseSettings):
     NEO4J_PASSWORD: str = "password"
     NEO4J_DATABASE: str = ""                   # Leave empty for server default
 
+    # ── Relational Database / Supabase (Cloud PostgreSQL) ───────────────────────
+    SUPABASE_URL: str = ""                     # https://<project-ref>.supabase.co
+    SUPABASE_KEY: str = ""                     # Anon public API key or service role key
+    SUPABASE_SERVICE_ROLE_KEY: str = ""        # Optional: Admin service role key for backend operations
+    DATABASE_URL: str = ""                     # postgresql://... connection URI
+
     # ── Cache / Queue ───────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
     UPSTASH_REDIS_REST_URL: str = ""           # Optional: auto-converts to rediss:// URI
     UPSTASH_REDIS_REST_TOKEN: str = ""         # Optional: Upstash access token / password
+
 
     # ── App Meta ────────────────────────────────────────────────────────────────
     APP_NAME: str = "ChainSleuth"

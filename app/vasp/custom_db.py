@@ -18,12 +18,19 @@ import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from app.core.supabase import (
+    is_supabase_enabled,
+    supabase_count_labels,
+    supabase_get_label,
+    supabase_search_labels,
+    supabase_upsert_label,
+)
 
 log = logging.getLogger(__name__)
 
 # Default persistent database path
 _DB_PATH = Path(__file__).resolve().parent.parent / "data" / "custom_vasp_labels.sqlite"
+
 
 
 @dataclass
@@ -83,11 +90,12 @@ class CustomVASPDatabase:
             conn.commit()
 
     def upsert_label(self, label: CustomWalletLabel) -> CustomWalletLabel:
-        """Insert or update a custom wallet attribution label."""
+        """Insert or update a custom wallet attribution label in local DB and Supabase."""
         clean_addr = label.address.strip()
         tags_json = json.dumps(label.tags)
         now_str = datetime.now(UTC).isoformat()
 
+        # 1. Always persist to local SQLite
         with self._get_connection() as conn:
             conn.execute(
                 """
@@ -121,11 +129,24 @@ class CustomVASPDatabase:
                 ),
             )
             conn.commit()
+
+        # 2. Sync to Supabase Cloud PostgreSQL if enabled
+        if is_supabase_enabled():
+            supabase_upsert_label(label.to_dict())
+
         return label
 
     def get_label(self, address: str) -> CustomWalletLabel | None:
-        """Retrieve a custom attribution label for an address if present."""
+        """Retrieve a custom attribution label from Supabase (or local fallback)."""
         clean_addr = address.strip()
+
+        # Try Supabase first
+        if is_supabase_enabled():
+            sb_data = supabase_get_label(clean_addr)
+            if sb_data:
+                return self._dict_to_model(sb_data)
+
+        # Fallback to local SQLite
         with self._get_connection() as conn:
             row = conn.execute(
                 "SELECT * FROM custom_wallet_labels WHERE address = ? COLLATE NOCASE",
@@ -143,7 +164,16 @@ class CustomVASPDatabase:
         skip: int = 0,
         limit: int = 50,
     ) -> list[CustomWalletLabel]:
-        """Search custom labels by address, entity name, or notes."""
+        """Search custom labels from Supabase (or local fallback)."""
+        # Try Supabase first
+        if is_supabase_enabled():
+            sb_results = supabase_search_labels(
+                query=query, chain=chain, entity_type=entity_type, skip=skip, limit=limit
+            )
+            if sb_results is not None:
+                return [self._dict_to_model(r) for r in sb_results]
+
+        # Fallback to local SQLite
         sql = "SELECT * FROM custom_wallet_labels WHERE 1=1"
         params: list[Any] = []
 
@@ -168,10 +198,16 @@ class CustomVASPDatabase:
             return [self._row_to_model(r) for r in rows]
 
     def count_labels(self) -> int:
-        """Return total count of custom labeled addresses."""
+        """Return total count of custom labeled addresses from Supabase (or local fallback)."""
+        if is_supabase_enabled():
+            cnt = supabase_count_labels()
+            if cnt is not None:
+                return cnt
+
         with self._get_connection() as conn:
             row = conn.execute("SELECT COUNT(*) as cnt FROM custom_wallet_labels").fetchone()
             return row["cnt"] if row else 0
+
 
     def bulk_import_csv(self, csv_content: str) -> int:
         """
@@ -246,6 +282,30 @@ class CustomVASPDatabase:
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
+
+    @staticmethod
+    def _dict_to_model(data: dict[str, Any]) -> CustomWalletLabel:
+        tags = data.get("tags") or []
+        if isinstance(tags, str):
+            try:
+                tags = json.loads(tags)
+            except Exception:
+                tags = [t.strip() for t in tags.split(",") if t.strip()]
+
+        return CustomWalletLabel(
+            address=data.get("address", ""),
+            entity_name=data.get("entity_name", ""),
+            entity_type=data.get("entity_type", "exchange"),
+            chain=data.get("chain", "ethereum"),
+            confidence=float(data.get("confidence", 1.0)),
+            source=data.get("source", "Supabase_Cloud"),
+            case_reference=data.get("case_reference"),
+            notes=data.get("notes"),
+            tags=tags,
+            created_at=data.get("created_at") or datetime.now(UTC).isoformat(),
+            updated_at=data.get("updated_at") or datetime.now(UTC).isoformat(),
+        )
+
 
 
 # Global singleton instance

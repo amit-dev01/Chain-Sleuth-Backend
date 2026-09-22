@@ -9,9 +9,11 @@ uvicorn[standard]>=0.32.0
 pydantic>=2.9.0
 pydantic-settings>=2.6.0
 
-# ── Graph Database & Cache ────────────────────────────────────────────────────
+# ── Graph Database, Relational DB & Cache ─────────────────────────────────────
 neo4j>=5.26.0
 redis>=5.2.0
+supabase>=2.0.0
+
 
 # ── AI / LLM ─────────────────────────────────────────────────────────────────
 google-genai>=1.0.0
