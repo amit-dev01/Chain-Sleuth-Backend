@@ -606,42 +606,199 @@ _jinja_env = Environment(
 )
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# ── ReportLab Pure-Python Fallback Renderers ─────────────────────────────────
 
-async def generate_legal_notice_pdf(
+def _render_notice_reportlab(context: dict, output_path: Path) -> None:
+    """Render Section 94 Notice PDF using ReportLab as a pure-Python fallback."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=letter,
+        leftMargin=54, rightMargin=54,
+        topMargin=54, bottomMargin=54,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'NoticeTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=14,
+        alignment=1,
+        spaceAfter=10,
+        textColor=colors.HexColor('#0f172a'),
+    )
+    sub_style = ParagraphStyle(
+        'NoticeSub',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10,
+        alignment=1,
+        textColor=colors.HexColor('#334155'),
+        spaceAfter=12,
+    )
+    body_style = ParagraphStyle(
+        'NoticeBody',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9.5,
+        leading=13,
+        textColor=colors.HexColor('#1e293b'),
+    )
+    bold_body = ParagraphStyle(
+        'BoldBody',
+        parent=body_style,
+        fontName='Helvetica-Bold',
+    )
+    mono_style = ParagraphStyle(
+        'NoticeMono',
+        parent=body_style,
+        fontName='Courier',
+        fontSize=8.5,
+    )
+
+    story = []
+    story.append(Paragraph("LEGAL NOTICE UNDER SECTION 94 BNSS 2023", title_style))
+    story.append(Paragraph(f"<b>Notice Ref:</b> {context['notice_ref']} | <b>Date:</b> {context['issue_date']}", sub_style))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0f172a'), spaceAfter=12))
+
+    story.append(Paragraph(f"<b>TO:</b> The Nodal / Compliance Officer, {context['vasp_name']}<br/>Email: {context['nodal_email']}", body_style))
+    story.append(Spacer(1, 8))
+
+    story.append(Paragraph(f"<b>SUBJECT:</b> Production of KYC Records &amp; Transaction Logs under Section 94 BNSS in Case {context['case_number']}", bold_body))
+    story.append(Spacer(1, 6))
+
+    clause_text = (
+        "Pursuant to Section 94 of the Bharatiya Nagarik Suraksha Sanhita 2023, you are hereby directed to produce, "
+        "within 7 (seven) working days of receipt of this notice, all KYC records, electronic logs, and user data "
+        "associated with the suspect cryptocurrency wallet address identified below."
+    )
+    story.append(Paragraph(clause_text, body_style))
+    story.append(Spacer(1, 10))
+
+    data = [
+        [Paragraph("<b>Suspect Address</b>", body_style), Paragraph(str(context['suspect_address']), mono_style)],
+        [Paragraph("<b>Network</b>", body_style), Paragraph(str(context['chain']).upper(), body_style)],
+        [Paragraph("<b>Target Deposit Address</b>", body_style), Paragraph(str(context['deposit_address']), mono_style)],
+        [Paragraph("<b>Target Hot Wallet</b>", body_style), Paragraph(str(context['hot_wallet_address']), mono_style)],
+        [Paragraph("<b>Confidence Score</b>", body_style), Paragraph(f"{float(context.get('confidence_score', 0))*100:.1f}%", body_style)],
+        [Paragraph("<b>FIU-IND Registered</b>", body_style), Paragraph("YES" if context.get('is_fiu_registered') else "NO (Obligated under PMLA 2002)", body_style)],
+        [Paragraph("<b>Estimated Loss (INR)</b>", body_style), Paragraph(f"Rs. {float(context.get('loss_amount_inr', 0)):,.2f}", bold_body)],
+    ]
+    t = Table(data, colWidths=[150, 354])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("<b>Section 63 BSA Evidence Hash:</b>", bold_body))
+    story.append(Paragraph(str(context.get('sha256_evidence_hash', '')), mono_style))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph(f"<b>Designated Officer:</b> {context['officer_name']}, {context['officer_designation']}<br/>{context['issuing_authority']}", body_style))
+    doc.build(story)
+
+
+def _render_fir_reportlab(context: dict, output_path: Path) -> None:
+    """Render Cybercrime FIR PDF using ReportLab as a pure-Python fallback."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=letter,
+        leftMargin=54, rightMargin=54,
+        topMargin=54, bottomMargin=54,
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'FirTitle',
+        parent=styles['Heading1'],
+        fontName='Helvetica-Bold',
+        fontSize=14,
+        alignment=1,
+        spaceAfter=10,
+        textColor=colors.HexColor('#0f172a'),
+    )
+    sub_style = ParagraphStyle(
+        'FirSub',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10,
+        alignment=1,
+        textColor=colors.HexColor('#334155'),
+        spaceAfter=12,
+    )
+    body_style = ParagraphStyle(
+        'FirBody',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9.5,
+        leading=13,
+        textColor=colors.HexColor('#1e293b'),
+    )
+    bold_body = ParagraphStyle(
+        'BoldBody',
+        parent=body_style,
+        fontName='Helvetica-Bold',
+    )
+    mono_style = ParagraphStyle(
+        'FirMono',
+        parent=body_style,
+        fontName='Courier',
+        fontSize=8.5,
+    )
+
+    story = []
+    story.append(Paragraph("FIRST INFORMATION REPORT (FIR)", title_style))
+    story.append(Paragraph(f"<b>FIR No:</b> {context['fir_number']} | <b>Police Station:</b> {context['police_station']}", sub_style))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0f172a'), spaceAfter=12))
+
+    data = [
+        [Paragraph("<b>Case Reference ID</b>", body_style), Paragraph(str(context['case_id']), mono_style)],
+        [Paragraph("<b>Complainant Name</b>", body_style), Paragraph(str(context['complainant_name']), body_style)],
+        [Paragraph("<b>Designation</b>", body_style), Paragraph(str(context['complainant_designation']), body_style)],
+        [Paragraph("<b>Date of Incident</b>", body_style), Paragraph(str(context['date_of_incident']), body_style)],
+        [Paragraph("<b>Suspect Addresses</b>", body_style), Paragraph(", ".join(context['suspect_addresses']), mono_style)],
+        [Paragraph("<b>Estimated Loss (INR)</b>", body_style), Paragraph(f"Rs. {float(context['estimated_loss_inr']):,.2f}", bold_body)],
+    ]
+    t = Table(data, colWidths=[150, 354])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("<b>Brief Facts &amp; Investigation Narrative:</b>", bold_body))
+    story.append(Paragraph(str(context['incident_description']), body_style))
+    doc.build(story)
+
+
+async def generate_section_94_pdf(
     payload: LegalNoticePayload,
-    officer_name: str = "Investigating Officer",
-    officer_designation: str = "Inspector of Police (Cyber Crime)",
-    issuing_authority: str = "Cyber Crime Investigation Cell",
-    requesting_authority: str = "State Cyber Crime Unit",
+    requesting_authority: str = "State Cyber Crime Cell",
+    issuing_authority: str    = "Office of the Superintendent of Police",
+    officer_name: str         = "Cyber Crime Investigating Officer",
+    officer_designation: str  = "Inspector of Police, Cyber PS",
 ) -> tuple[Path, str]:
     """
     Render a Section 94 BNSS legal notice PDF from a ``LegalNoticePayload``.
-
-    Args:
-        payload:               Validated LegalNoticePayload (from schemas.py).
-        officer_name:          Name of the certifying officer.
-        officer_designation:   Rank / designation of the officer.
-        issuing_authority:     Name of the issuing police / government body.
-        requesting_authority:  Authority formally requesting the records.
-
-    Returns:
-        A tuple of:
-          - ``Path`` to the generated PDF file on disk.
-          - ``str``  notice reference number (for storing in DB / response).
-
-    Raises:
-        RuntimeError: If WeasyPrint is not installed.
-        jinja2.TemplateNotFound: If the template cannot be loaded.
+    Uses WeasyPrint when available, with automatic fallback to ReportLab.
     """
-    try:
-        from weasyprint import HTML as WeasyprintHTML
-    except ImportError as exc:
-        raise RuntimeError(
-            "WeasyPrint is required for PDF generation. "
-            "Install it with: pip install weasyprint"
-        ) from exc
-
     notice_ref   = f"NOTICE-{str(uuid4()).upper()[:8]}"
     generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     issue_date   = datetime.now(UTC).strftime("%d %B %Y")
@@ -649,19 +806,14 @@ async def generate_legal_notice_pdf(
     vasp = payload.attributed_vasp
 
     context = {
-        # Notice identity
         "notice_ref":           notice_ref,
         "issue_date":           issue_date,
         "generated_at":         generated_at,
-
-        # Case
         "case_number":          payload.case_number,
         "requesting_authority": requesting_authority,
         "issuing_authority":    issuing_authority,
         "officer_name":         officer_name,
         "officer_designation":  officer_designation,
-
-        # VASP
         "vasp_name":            vasp.vasp_name,
         "nodal_email":          vasp.nodal_officer_email,
         "nodal_phone":          vasp.nodal_officer_phone,
@@ -669,26 +821,28 @@ async def generate_legal_notice_pdf(
         "deposit_address":      vasp.deposit_address,
         "hot_wallet_address":   vasp.hot_wallet_address,
         "confidence_score":     vasp.confidence_score,
-
-        # Suspect
         "suspect_address":      payload.suspect_address,
-        "chain":                "tron",   # extracted from suspect address context
-
-        # Financial
+        "chain":                "tron",
         "loss_amount_inr":      payload.loss_amount_inr,
-
-        # Evidence
         "flow_summary":         payload.flow_summary,
         "sha256_evidence_hash": payload.sha256_evidence_hash,
     }
 
-    # ── Render HTML ───────────────────────────────────────────────────────────
-    template     = _jinja_env.get_template("notice.html")
-    html_content = template.render(**context)
-
-    # ── Convert to PDF ────────────────────────────────────────────────────────
     output_path = OUTPUT_DIR / f"{notice_ref}.pdf"
-    WeasyprintHTML(string=html_content).write_pdf(str(output_path))
+
+    # Attempt WeasyPrint first, fall back to ReportLab
+    rendered = False
+    try:
+        from weasyprint import HTML as WeasyprintHTML
+        template     = _jinja_env.get_template("notice.html")
+        html_content = template.render(**context)
+        WeasyprintHTML(string=html_content).write_pdf(str(output_path))
+        rendered = True
+    except Exception as exc:
+        log.warning("WeasyPrint unavailable (%s), rendering notice via ReportLab fallback", exc)
+
+    if not rendered:
+        _render_notice_reportlab(context, output_path)
 
     log.info(
         "Legal notice PDF generated: %s (case=%s, vasp=%s)",
@@ -697,28 +851,18 @@ async def generate_legal_notice_pdf(
     return output_path, notice_ref
 
 
+# Alias for backward-compatibility with routes_notice.py
+generate_legal_notice_pdf = generate_section_94_pdf
+
+
 async def generate_fir_pdf(
     payload: FIRCreate,
     police_station: str = "State Cyber Crime Police Station",
 ) -> tuple[Path, str]:
     """
-    Render an official Cybercrime First Information Report (FIR) PDF from an ``FIRCreate`` payload.
-
-    Args:
-        payload: Validated FIRCreate payload.
-        police_station: Police station name.
-
-    Returns:
-        (Path to generated PDF, FIR number string)
+    Render an official Cybercrime First Information Report (FIR) PDF.
+    Uses WeasyPrint when available, with automatic fallback to ReportLab.
     """
-    try:
-        from weasyprint import HTML as WeasyprintHTML
-    except ImportError as exc:
-        raise RuntimeError(
-            "WeasyPrint is required for PDF generation. "
-            "Install it with: pip install weasyprint"
-        ) from exc
-
     fir_ref = f"FIR-{str(uuid4()).upper()[:8]}"
     generated_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
     incident_date_str = payload.date_of_incident.strftime("%d %B %Y, %H:%M UTC")
@@ -736,15 +880,26 @@ async def generate_fir_pdf(
         "generated_at": generated_at,
     }
 
-    template = _jinja_env.get_template("fir.html")
-    html_content = template.render(**context)
-
     output_path = FIR_OUTPUT_DIR / f"{fir_ref}.pdf"
-    WeasyprintHTML(string=html_content).write_pdf(str(output_path))
+
+    # Attempt WeasyPrint first, fall back to ReportLab
+    rendered = False
+    try:
+        from weasyprint import HTML as WeasyprintHTML
+        template = _jinja_env.get_template("fir.html")
+        html_content = template.render(**context)
+        WeasyprintHTML(string=html_content).write_pdf(str(output_path))
+        rendered = True
+    except Exception as exc:
+        log.warning("WeasyPrint unavailable (%s), rendering FIR via ReportLab fallback", exc)
+
+    if not rendered:
+        _render_fir_reportlab(context, output_path)
 
     log.info(
         "FIR PDF generated: %s (case=%s, fir=%s)",
         output_path, payload.case_id, fir_ref,
     )
     return output_path, fir_ref
+
 

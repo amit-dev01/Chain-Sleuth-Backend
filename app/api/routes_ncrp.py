@@ -21,9 +21,11 @@ from app.core.database import get_session
 from app.engine.chain_router import validate_address
 from app.engine.traversal import run_bfs_trace
 from app.engine.typology import (
+    bridge_hop_detector,
     dex_swap_detector,
     fan_out_detector,
     first_funder_trace,
+    ofac_sanctions_detector,
     peeling_chain_detector,
     zero_gas_burner_detector,
 )
@@ -198,6 +200,8 @@ async def batch_trace_ncrp(
             fan_out_detector(res.nodes, res.edges)
             zero_gas_burner_detector(res.nodes, res.edges)
             dex_swap_detector(res.nodes, res.edges)
+            ofac_sanctions_detector(res.nodes, res.edges)
+            bridge_hop_detector(res.nodes, res.edges)
 
             attr = await attribute_vasp(
                 suspect_address=complaint.suspect_wallet_address,

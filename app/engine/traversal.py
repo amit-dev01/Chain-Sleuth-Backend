@@ -26,6 +26,9 @@ from app.core.database import (
     batch_merge_wallet_nodes,
     merge_wallet_node,
 )
+from app.engine.btc_tracer import fetch_btc_transfers, get_btc_balance
+from app.engine.evm_tracer import fetch_evm_transfers, get_evm_balance
+from app.engine.solana_tracer import fetch_solana_transfers, get_solana_balance
 from app.engine.tron_tracer import fetch_usdt_transfers, get_account_balance
 from app.models.schemas import (
     Chain,
@@ -90,6 +93,28 @@ def _compute_risk_score(transfers_received: list[dict]) -> int:
     return 20
 
 
+async def _fetch_transfers(address: str, chain: Chain) -> list[dict]:
+    """Dispatch outbound transfer retrieval to chain-specific tracer."""
+    if chain == "ethereum":
+        return await fetch_evm_transfers(address, only_outbound=True)
+    if chain == "solana":
+        return await fetch_solana_transfers(address, only_outbound=True)
+    if chain == "bitcoin":
+        return await fetch_btc_transfers(address, only_outbound=True)
+    return await fetch_usdt_transfers(address, only_outbound=True)
+
+
+async def _fetch_balance(address: str, chain: Chain) -> float:
+    """Dispatch balance retrieval to chain-specific tracer."""
+    if chain == "ethereum":
+        return await get_evm_balance(address)
+    if chain == "solana":
+        return await get_solana_balance(address)
+    if chain == "bitcoin":
+        return await get_btc_balance(address)
+    return await get_account_balance(address)
+
+
 # ── Core BFS ──────────────────────────────────────────────────────────────────
 
 async def run_bfs_trace(request: TraceRequest) -> TraceResult:
@@ -120,7 +145,7 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
     visited.add(request.suspect_address.lower())
 
     # Seed the root wallet
-    root_balance = await get_account_balance(request.suspect_address)
+    root_balance = await _fetch_balance(request.suspect_address, chain)
     root_node    = _make_wallet_node(request.suspect_address, chain, root_balance)
     node_map[request.suspect_address] = root_node
 
@@ -148,15 +173,12 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
             log.warning("Node cap (%d) reached – stopping BFS expansion.", _MAX_NODES)
             break
 
-        # ── Fetch outbound USDT transfers (cached by tron_tracer) ─────────────
-        log.debug("Fetching transfers: depth=%d address=%s", depth, current_address)
+        # ── Fetch outbound transfers for the current chain ────────────────────
+        log.debug("Fetching transfers: depth=%d address=%s chain=%s", depth, current_address, chain)
         try:
-            transfers = await fetch_usdt_transfers(
-                address=current_address,
-                only_outbound=True,
-            )
+            transfers = await _fetch_transfers(current_address, chain)
         except Exception as exc:
-            log.error("Failed to fetch transfers for %s: %s", current_address, exc)
+            log.error("Failed to fetch transfers for %s (%s): %s", current_address, chain, exc)
             continue
 
         if not transfers:
@@ -188,7 +210,7 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
 
             # ── Build / update node ───────────────────────────────────────────
             if recipient not in node_map:
-                bal  = await get_account_balance(recipient)
+                bal  = await _fetch_balance(recipient, chain)
                 node = _make_wallet_node(recipient, chain, bal)
                 node_map[recipient] = node
 

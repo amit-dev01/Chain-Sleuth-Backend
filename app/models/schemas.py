@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ── 1. Chain ─────────────────────────────────────────────────────────────────
 
-Chain = Literal["tron", "solana", "ethereum"]
+Chain = Literal["tron", "solana", "ethereum", "bitcoin"]
 
 
 # ── 2. TypologyFlag ──────────────────────────────────────────────────────────
@@ -24,6 +24,8 @@ TypologyFlag = Literal[
     "zero_gas_burner",
     "first_funder_match",
     "dex_swap",
+    "ofac_sanctioned",
+    "bridge_hop",
 ]
 
 

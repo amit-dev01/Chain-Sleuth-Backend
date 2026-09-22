@@ -21,9 +21,11 @@ from app.engine.chain_router import DetectedChain, validate_address
 from app.engine.recommendations import generate_recommendations
 from app.engine.traversal import run_bfs_trace
 from app.engine.typology import (
+    bridge_hop_detector,
     dex_swap_detector,
     fan_out_detector,
     first_funder_trace,
+    ofac_sanctions_detector,
     peeling_chain_detector,
     zero_gas_burner_detector,
 )
@@ -68,7 +70,7 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
         raise HTTPException(
             status_code=getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422),
             detail=f"Unrecognised address format: '{payload.suspect_address}'. "
-                   "Expected TRON (T + Base58 chars), EVM (0x + 40 hex), or Solana (Base58 32–44).",
+                   "Expected TRON (T + Base58 chars), EVM (0x + 40 hex), Solana (Base58 32–44), or Bitcoin (1/3/bc1).",
         )
 
     # Warn if declared chain doesn't match detected format
@@ -76,6 +78,7 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
         DetectedChain.TRON:     "tron",
         DetectedChain.ETHEREUM: "ethereum",
         DetectedChain.SOLANA:   "solana",
+        DetectedChain.BITCOIN:  "bitcoin",
     }
     if detected_chain and chain_map.get(detected_chain) != payload.chain:
         log.warning(
@@ -102,18 +105,22 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
 
     # ── 4. Typology detection ─────────────────────────────────────────────────
     try:
-        peel_summary    = peeling_chain_detector(result.nodes, result.edges)
-        funder_summary  = await first_funder_trace(result.nodes, result.edges)
-        fan_out_summary = fan_out_detector(result.nodes, result.edges)
-        burner_summary  = zero_gas_burner_detector(result.nodes, result.edges)
-        dex_summary     = dex_swap_detector(result.nodes, result.edges)
+        peel_summary      = peeling_chain_detector(result.nodes, result.edges)
+        funder_summary    = await first_funder_trace(result.nodes, result.edges)
+        fan_out_summary   = fan_out_detector(result.nodes, result.edges)
+        burner_summary    = zero_gas_burner_detector(result.nodes, result.edges)
+        dex_summary       = dex_swap_detector(result.nodes, result.edges)
+        sanctions_summary = ofac_sanctions_detector(result.nodes, result.edges)
+        bridge_summary    = bridge_hop_detector(result.nodes, result.edges)
         log.info(
-            "Typology: peeling=%d | funder=%d | fan_out=%d | burner=%d | dex_swap=%d",
+            "Typology: peeling=%d | funder=%d | fan_out=%d | burner=%d | dex_swap=%d | sanctions=%d | bridges=%d",
             len(peel_summary.get("flagged_addresses", [])),
             len(funder_summary.get("funder_addresses", [])),
             len(fan_out_summary.get("flagged_addresses", [])),
             len(burner_summary.get("flagged_addresses", [])),
             len(dex_summary.get("flagged_addresses", [])),
+            len(sanctions_summary.get("flagged_addresses", [])),
+            len(bridge_summary.get("flagged_addresses", [])),
         )
     except Exception as exc:
         # Non-fatal: log and continue

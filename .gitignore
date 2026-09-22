@@ -18,6 +18,7 @@ build/
 # Generated PDFs
 generated_pdfs/
 static/notices/*.pdf
+static/fir/*.pdf
 
 # IDE
 .vscode/

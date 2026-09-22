@@ -23,7 +23,11 @@ _TRON_RE = re.compile(r"^T[0-9a-zA-Z]{20,34}$")
 # EVM (Ethereum / BSC / Polygon / etc.): optional 0x prefix + 40 hex chars
 _EVM_RE = re.compile(r"^(0x)?[0-9a-fA-F]{40}$")
 
-# Solana: Base58 alphabet only, 32–44 chars, no '0x' prefix, doesn't start with 'T'
+# Bitcoin: Bech32 (bc1...) or Legacy P2PKH (starts with 1) or P2SH (starts with 3)
+_BTC_BECH32_RE = re.compile(r"^bc1[a-z0-9]{39,59}$", re.IGNORECASE)
+_BTC_LEGACY_RE = re.compile(r"^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$")
+
+# Solana: Base58 alphabet only, 32–44 chars, no '0x' prefix, doesn't start with 'T', '1', '3' or 'bc1'
 _SOLANA_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 
 
@@ -33,6 +37,7 @@ class DetectedChain(str, Enum):
     TRON     = "tron"
     SOLANA   = "solana"
     ETHEREUM = "ethereum"   # represents all EVM-compatible chains
+    BITCOIN  = "bitcoin"    # represents Bitcoin mainnet
     UNKNOWN  = "unknown"
 
 
@@ -65,16 +70,18 @@ def detect_chain(address: str) -> DetectedChain:
         <DetectedChain.SOLANA: 'solana'>
     """
     addr = address.strip()
-
     if _EVM_RE.match(addr):
         return DetectedChain.ETHEREUM
 
     if _TRON_RE.match(addr):
         return DetectedChain.TRON
 
-    # Solana: Base58 match but explicitly NOT starting with 'T'
-    # (to avoid false-positives with short TRON-like strings)
-    if _SOLANA_RE.match(addr) and not addr.startswith("T"):
+    # Bitcoin: Bech32 (bc1...) or Legacy/Script (starts with 1 or 3)
+    if _BTC_BECH32_RE.match(addr) or _BTC_LEGACY_RE.match(addr):
+        return DetectedChain.BITCOIN
+
+    # Solana: Base58 match but explicitly NOT starting with 'T', '1', '3', or 'bc1'
+    if _SOLANA_RE.match(addr) and not addr.startswith(("T", "1", "3", "bc1")):
         return DetectedChain.SOLANA
 
     return DetectedChain.UNKNOWN
@@ -114,6 +121,8 @@ def validate_address(address: str, declared_chain: str | None = None) -> tuple[b
             return True, DetectedChain.TRON
         if dc == "ethereum" and (addr.startswith("0x") or len(addr) >= 40):
             return True, DetectedChain.ETHEREUM
+        if dc == "bitcoin" and (addr.startswith(("1", "3", "bc1")) and len(addr) >= 25):
+            return True, DetectedChain.BITCOIN
         if dc == "solana" and len(addr) >= 30:
             return True, DetectedChain.SOLANA
 

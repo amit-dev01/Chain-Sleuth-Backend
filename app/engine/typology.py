@@ -469,3 +469,71 @@ def dex_swap_detector(
     return {"flagged_addresses": flagged}
 
 
+def ofac_sanctions_detector(
+    nodes: list[WalletNode],
+    edges: list[TransferEdge],
+) -> dict[str, list[str]]:
+    """
+    Detect addresses designated under OFAC SDN sanctions programs.
+
+    A wallet is tagged ``ofac_sanctioned`` if its address matches a known
+    OFAC SDN designation (e.g. Lazarus Group, Tornado Cash, Garantex, Sinbad).
+    Its riskScore is automatically set to 100 (CRITICAL).
+    """
+    from app.engine.sanctions import is_sanctioned
+
+    flagged: list[str] = []
+    for node in nodes:
+        if is_sanctioned(node.address):
+            if "ofac_sanctioned" not in node.typologyFlags:
+                node.typologyFlags.append("ofac_sanctioned")  # type: ignore[arg-type]
+                node.riskScore = 100
+                flagged.append(node.address)
+                log.warning("CRITICAL OFAC SANCTIONED ADDRESS DETECTED: %s", node.address)
+
+    log.info("ofac_sanctions_detector: %d addresses flagged.", len(flagged))
+    return {"flagged_addresses": flagged}
+
+
+def bridge_hop_detector(
+    nodes: list[WalletNode],
+    edges: list[TransferEdge],
+) -> dict[str, list[str]]:
+    """
+    Detect cross-chain bridge hops and instant No-KYC swapper usage.
+
+    A wallet is tagged ``bridge_hop`` if it routes funds through cross-chain
+    bridges (e.g. Stargate, Across, Hop, Wormhole) or No-KYC swappers
+    (e.g. FixedFloat, ChangeNOW, SideShift, SimpleSwap).
+    """
+    from app.vasp.registry import is_bridge, is_no_kyc_swapper
+
+    node_map = {n.address.lower(): n for n in nodes}
+    flagged: list[str] = []
+
+    for node in nodes:
+        addr = node.address.lower()
+        if is_bridge(addr) or is_no_kyc_swapper(addr):
+            if "bridge_hop" not in node.typologyFlags:
+                node.typologyFlags.append("bridge_hop")  # type: ignore[arg-type]
+                node.riskScore = max(node.riskScore, 75)
+                flagged.append(node.address)
+                log.info("BRIDGE / NO-KYC SWAPPER flagged: %s", node.address)
+
+    for edge in edges:
+        from_lower = edge.from_address.lower()
+        to_lower = edge.to_address.lower()
+        for candidate_addr, target_addr in [(to_lower, from_lower), (from_lower, to_lower)]:
+            if is_bridge(candidate_addr) or is_no_kyc_swapper(candidate_addr):
+                wallet = node_map.get(target_addr)
+                if wallet and "bridge_hop" not in wallet.typologyFlags:
+                    wallet.typologyFlags.append("bridge_hop")  # type: ignore[arg-type]
+                    wallet.riskScore = max(wallet.riskScore, 70)
+                    flagged.append(wallet.address)
+                    log.info("BRIDGE HOP user flagged: %s via %s", wallet.address, candidate_addr)
+
+    log.info("bridge_hop_detector: %d addresses flagged.", len(flagged))
+    return {"flagged_addresses": flagged}
+
+
+
