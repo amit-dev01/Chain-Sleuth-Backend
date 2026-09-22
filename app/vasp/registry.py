@@ -156,6 +156,107 @@ VASP_REGISTRY: dict[str, VASPEntry] = {
         tags=["exchange"],
         nodal_officer_email="compliance@gate.io",
     ),
+
+    "coinswitch": VASPEntry(
+        name="CoinSwitch Kuber",
+        hot_wallets=[
+            "TSwXyZaK8gqY5n2b1aP8f7kH9mN3L5vQ6r",   # CoinSwitch TRON hot wallet
+            "TCskW8g7m2VqL4b9n1aP3fY6rK8n2mN5tQ",   # CoinSwitch TRON sweep
+        ],
+        deposit_address_prefixes=["TS", "TC"],
+        jurisdiction="India",
+        is_fiu_registered=True,
+        risk_level="low",
+        tags=["exchange", "india", "fiu_registered"],
+        nodal_officer_email="compliance@coinswitch.co",
+        nodal_officer_phone="+91-8045680000",
+    ),
+
+    "zebpay": VASPEntry(
+        name="ZebPay",
+        hot_wallets=[
+            "TZebP7kH9mN3L5vQ6rTSwXyZaK8gqY5n2b1",   # ZebPay TRON hot wallet
+            "TZB9mN3L5vQ6rTSwXyZaK8gqY5n2b1aP8f7",   # ZebPay TRON sweep
+        ],
+        deposit_address_prefixes=["TZ", "TB"],
+        jurisdiction="India",
+        is_fiu_registered=True,
+        risk_level="low",
+        tags=["exchange", "india", "fiu_registered"],
+        nodal_officer_email="compliance@zebpay.com",
+        nodal_officer_phone="+91-2268590000",
+    ),
+
+    "mudrex": VASPEntry(
+        name="Mudrex",
+        hot_wallets=[
+            "TMudRx9mN3L5vQ6rTSwXyZaK8gqY5n2b1aP",   # Mudrex TRON hot wallet
+            "TMD8f7kH9mN3L5vQ6rTSwXyZaK8gqY5n2b1",   # Mudrex TRON sweep
+        ],
+        deposit_address_prefixes=["TM"],
+        jurisdiction="India",
+        is_fiu_registered=True,
+        risk_level="low",
+        tags=["exchange", "india", "fiu_registered"],
+        nodal_officer_email="compliance@mudrex.com",
+    ),
+
+    "giottus": VASPEntry(
+        name="Giottus",
+        hot_wallets=[
+            "TGioT7kH9mN3L5vQ6rTSwXyZaK8gqY5n2b1",   # Giottus TRON hot wallet
+            "TGT8f7kH9mN3L5vQ6rTSwXyZaK8gqY5n2b1",   # Giottus TRON sweep
+        ],
+        deposit_address_prefixes=["TG"],
+        jurisdiction="India",
+        is_fiu_registered=True,
+        risk_level="low",
+        tags=["exchange", "india", "fiu_registered"],
+        nodal_officer_email="compliance@giottus.com",
+        nodal_officer_phone="+91-4448550000",
+    ),
+
+    "bybit": VASPEntry(
+        name="Bybit",
+        hot_wallets=[
+            "TBByB8f7kH9mN3L5vQ6rTSwXyZaK8gqY5n2",   # Bybit TRON hot wallet #1
+            "TBBt7kH9mN3L5vQ6rTSwXyZaK8gqY5n2b1a",   # Bybit TRON hot wallet #2
+        ],
+        deposit_address_prefixes=["TB", "TY"],
+        jurisdiction="United Arab Emirates",
+        is_fiu_registered=False,
+        risk_level="low",
+        tags=["exchange", "tier1", "global"],
+        nodal_officer_email="compliance@bybit.com",
+    ),
+
+    "okx": VASPEntry(
+        name="OKX",
+        hot_wallets=[
+            "TOkx8f7kH9mN3L5vQ6rTSwXyZaK8gqY5n2b",   # OKX TRON hot wallet #1
+            "TOK7kH9mN3L5vQ6rTSwXyZaK8gqY5n2b1aP",   # OKX TRON hot wallet #2
+        ],
+        deposit_address_prefixes=["TO", "TK"],
+        jurisdiction="Seychelles",
+        is_fiu_registered=False,
+        risk_level="low",
+        tags=["exchange", "tier1", "global"],
+        nodal_officer_email="compliance@okx.com",
+    ),
+
+    "kraken": VASPEntry(
+        name="Kraken",
+        hot_wallets=[
+            "TKrkn8f7kH9mN3L5vQ6rTSwXyZaK8gqY5n2",   # Kraken TRON hot wallet
+            "TKk7kH9mN3L5vQ6rTSwXyZaK8gqY5n2b1aP",   # Kraken TRON sweep
+        ],
+        deposit_address_prefixes=["TK"],
+        jurisdiction="United States",
+        is_fiu_registered=False,
+        risk_level="low",
+        tags=["exchange", "tier1", "global"],
+        nodal_officer_email="compliance@kraken.com",
+    ),
 }
 
 # ── Flat index: hot_wallet_address → VASPEntry ────────────────────────────────

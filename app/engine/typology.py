@@ -369,3 +369,103 @@ def fan_out_detector(
     log.info("fan_out_detector: %d addresses flagged.", len(flagged))
     return {"flagged_addresses": flagged}
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Zero-Gas Burner & DEX Swap Detectors
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Known DEX router / bridge contracts on TRON
+_KNOWN_DEX_ROUTERS: set[str] = {
+    "TKzxdSv2FZKQrEqkKVgp5DcwEXBEKMg2Ax".lower(),  # SunSwap V2 Router
+    "TQn9Y2khEsLJW1ChVWFMSMeSTow5K3GW5B".lower(),  # SunSwap V3 Router
+    "TXWkP3asnWqACXd7KnSQqd3wgJwEkvLjcx".lower(),  # JustSwap Router
+    "TW91kFv9N75v8B3j5qQ3p2vL8otSzgjLj6".lower(),  # Transit Swap Bridge Router
+}
+
+
+def zero_gas_burner_detector(
+    nodes: list[WalletNode],
+    edges: list[TransferEdge],
+) -> dict[str, list[str]]:
+    """
+    Detect temporary zero-gas burner wallets used as disposable conduits.
+
+    A wallet is tagged ``zero_gas_burner`` if:
+      - Its native TRX balance is essentially zero (balance <= 0.05 TRX).
+      - It has both inbound and outbound TRC-20 transfers (funds routed through).
+      - It is not an exchange hot-wallet or known VASP.
+
+    Args:
+        nodes: All WalletNode objects from the trace (mutated in-place).
+        edges: All TransferEdge objects from the trace.
+
+    Returns:
+        A dict mapping ``"flagged_addresses"`` to a list of flagged wallet addresses.
+    """
+    adj = _build_adjacency(edges)
+    node_map = {n.address.lower(): n for n in nodes}
+    flagged: list[str] = []
+
+    for node in nodes:
+        if node.isVasp:
+            continue
+
+        if node.balance <= 0.05:
+            inbound = _total_inbound(node.address, edges)
+            outbound = _total_outbound(node.address, adj)
+            if inbound > 0 and outbound > 0:
+                wallet = node_map.get(node.address.lower())
+                if wallet and "zero_gas_burner" not in wallet.typologyFlags:
+                    wallet.typologyFlags.append("zero_gas_burner")  # type: ignore[arg-type]
+                    flagged.append(node.address)
+                    log.info(
+                        "ZERO-GAS BURNER flagged: %s (bal=%.4f, in=%.2f, out=%.2f)",
+                        node.address, node.balance, inbound, outbound,
+                    )
+
+    log.info("zero_gas_burner_detector: %d addresses flagged.", len(flagged))
+    return {"flagged_addresses": flagged}
+
+
+def dex_swap_detector(
+    nodes: list[WalletNode],
+    edges: list[TransferEdge],
+) -> dict[str, list[str]]:
+    """
+    Detect interactions with decentralized exchange (DEX) / AMM router contracts.
+
+    A wallet is tagged ``dex_swap`` if it exchanges funds directly with a known
+    DEX router (e.g. SunSwap, Transit Swap) to swap USDT or bridge tokens.
+
+    Args:
+        nodes: All WalletNode objects from the trace (mutated in-place).
+        edges: All TransferEdge objects from the trace.
+
+    Returns:
+        A dict mapping ``"flagged_addresses"`` to a list of flagged wallet addresses.
+    """
+    node_map = {n.address.lower(): n for n in nodes}
+    flagged: list[str] = []
+
+    for edge in edges:
+        from_lower = edge.from_address.lower()
+        to_lower = edge.to_address.lower()
+
+        if to_lower in _KNOWN_DEX_ROUTERS:
+            wallet = node_map.get(from_lower)
+            if wallet and "dex_swap" not in wallet.typologyFlags:
+                wallet.typologyFlags.append("dex_swap")  # type: ignore[arg-type]
+                flagged.append(wallet.address)
+                log.info("DEX SWAP interaction flagged: %s -> %s", wallet.address, to_lower)
+
+        elif from_lower in _KNOWN_DEX_ROUTERS:
+            wallet = node_map.get(to_lower)
+            if wallet and "dex_swap" not in wallet.typologyFlags:
+                wallet.typologyFlags.append("dex_swap")  # type: ignore[arg-type]
+                flagged.append(wallet.address)
+                log.info("DEX SWAP liquidity receive flagged: %s from %s", wallet.address, from_lower)
+
+    log.info("dex_swap_detector: %d addresses flagged.", len(flagged))
+    return {"flagged_addresses": flagged}
+
+

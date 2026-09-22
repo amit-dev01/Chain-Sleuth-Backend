@@ -20,7 +20,13 @@ from app.core.database import get_case_by_id, save_trace_result
 from app.engine.chain_router import DetectedChain, validate_address
 from app.engine.recommendations import generate_recommendations
 from app.engine.traversal import run_bfs_trace
-from app.engine.typology import fan_out_detector, first_funder_trace, peeling_chain_detector
+from app.engine.typology import (
+    dex_swap_detector,
+    fan_out_detector,
+    first_funder_trace,
+    peeling_chain_detector,
+    zero_gas_burner_detector,
+)
 from app.models.schemas import Chain, TraceRequest, TraceResult
 from app.vasp.attribution import attribute_vasp
 
@@ -99,11 +105,15 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
         peel_summary    = peeling_chain_detector(result.nodes, result.edges)
         funder_summary  = await first_funder_trace(result.nodes, result.edges)
         fan_out_summary = fan_out_detector(result.nodes, result.edges)
+        burner_summary  = zero_gas_burner_detector(result.nodes, result.edges)
+        dex_summary     = dex_swap_detector(result.nodes, result.edges)
         log.info(
-            "Typology: peeling_chain=%d nodes | first_funder=%d nodes | fan_out=%d nodes",
+            "Typology: peeling=%d | funder=%d | fan_out=%d | burner=%d | dex_swap=%d",
             len(peel_summary.get("flagged_addresses", [])),
             len(funder_summary.get("funder_addresses", [])),
             len(fan_out_summary.get("flagged_addresses", [])),
+            len(burner_summary.get("flagged_addresses", [])),
+            len(dex_summary.get("flagged_addresses", [])),
         )
     except Exception as exc:
         # Non-fatal: log and continue

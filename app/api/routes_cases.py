@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.database import get_case_by_id
 from app.core.database import list_cases as db_list_cases
+from app.engine.clustering import CaseClustersResponse, compute_case_clusters
 from app.engine.recommendations import generate_recommendations
 from app.models.schemas import CaseSummary, Chain, TraceResult, TransferEdge, VASPAttribution, WalletNode
 
@@ -221,3 +222,31 @@ async def list_all_cases(
             continue
 
     return summaries
+
+
+@router.get(
+    "/{case_id}/clusters",
+    response_model=CaseClustersResponse,
+    summary="Compute wallet clusters for a case",
+    description=(
+        "Performs automated forensic clustering on the case graph to identify exchange sweep sub-networks, "
+        "criminal syndicate gas co-ordination clusters, and laundering transit cells."
+    ),
+)
+async def get_case_clusters(case_id: str) -> CaseClustersResponse:
+    """
+    Cluster nodes in a case into exchange sweep sub-networks and criminal syndicate cells.
+    """
+    trace_result = await get_case(case_id)
+    clusters = compute_case_clusters(
+        case_id=case_id,
+        nodes=trace_result.nodes,
+        edges=trace_result.edges,
+        attribution=trace_result.attribution,
+    )
+    return CaseClustersResponse(
+        case_id=case_id,
+        cluster_count=len(clusters),
+        clusters=clusters,
+    )
+

@@ -131,9 +131,31 @@ def generate_recommendations(
             f"parallel outputs to evade AML detection limits. Subpoena logs for all secondary recipients."
         )
 
-    # ── 4. Court Admissibility Reminder ───────────────────────────────────────
+    # Check for Zero-Gas Burners
+    burner_nodes = [
+        n.address for n in nodes
+        if "zero_gas_burner" in n.typologyFlags
+    ]
+    if burner_nodes:
+        recs.append(
+            f"7. DISPOSABLE BURNER WALLET: Wallet {burner_nodes[0]} operated with zero native gas "
+            f"balance as a disposable transit conduit. Subpoena preceding funder and destination exchange."
+        )
+
+    # Check for DEX Swap
+    dex_nodes = [
+        n.address for n in nodes
+        if "dex_swap" in n.typologyFlags
+    ]
+    if dex_nodes:
+        recs.append(
+            f"8. DEFI / DEX LIQUIDITY SWAP DETECTED: Address {dex_nodes[0]} interacted with a decentralized "
+            f"exchange (DEX) pool router. Query on-chain swap events to extract the swapped token contract and recipient address."
+        )
+
+    # ── 4. Court Admissibility Protocol ───────────────────────────────────────
     recs.append(
-        "7. DIGITAL EVIDENCE PROTOCOL: Generate Section 63 BSA Digital Evidence Certificate and embed "
+        "9. DIGITAL EVIDENCE PROTOCOL: Generate Section 63 BSA Digital Evidence Certificate and embed "
         "the deterministic SHA-256 integrity seal in the case diary for courtroom admissibility."
     )
 
