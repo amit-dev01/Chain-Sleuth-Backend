@@ -22,6 +22,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api import (
+    routes_auth,
     routes_cases,
     routes_fir,
     routes_ncrp,
@@ -178,6 +179,7 @@ app.mount(
 
 _API_PREFIX = "/api/v1"
 
+app.include_router(routes_auth.router,   prefix=_API_PREFIX)
 app.include_router(routes_trace.router,  prefix=_API_PREFIX)
 app.include_router(routes_cases.router,  prefix=_API_PREFIX)
 app.include_router(routes_fir.router,    prefix=_API_PREFIX)

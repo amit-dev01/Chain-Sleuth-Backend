@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     CHAINALYSIS_API_KEY: str = ""    # Chainalysis KYT / Oracle API key
     ELLIPTIC_API_KEY: str = ""       # Elliptic Forensics API key
 
+    # ── Auth0 & Identity Management ──────────────────────────────────────────────
+    AUTH0_DOMAIN: str = ""           # e.g. dev-xyz.us.auth0.com
+    AUTH0_AUDIENCE: str = ""         # e.g. https://api.chainsleuth.in
+    AUTH0_ISSUER: str = ""           # e.g. https://dev-xyz.us.auth0.com/
+    AUTH_ENABLED: bool = False       # True to enforce live Auth0 JWT verification
+
     # ── AI / LLM ────────────────────────────────────────────────────────────────
     GEMINI_API_KEY: str = ""         # Google Gemini API key (google-genai SDK)
     GEMINI_MODEL: str = "gemini-3.6-flash"  # Verified working model on Google GenAI SDK
