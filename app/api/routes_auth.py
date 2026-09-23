@@ -1,9 +1,10 @@
 """
-routes_auth.py – Auth0 Identity & Officer Session Endpoints.
+routes_auth.py – Officer Session Endpoints (auth-free mode).
 
-Provides:
-GET /api/v1/auth/me    – Return profile, verified roles, and permissions of the current officer
-GET /api/v1/auth/roles – Return the system RBAC role definitions
+Auth0 has been removed. Returns a default officer profile for all requests.
+
+GET /api/v1/auth/me    – Return officer profile
+GET /api/v1/auth/roles – Return RBAC role definitions
 """
 from __future__ import annotations
 
@@ -13,22 +14,17 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import User, get_current_user
 
-router = APIRouter(prefix="/auth", tags=["Auth0 Identity & RBAC"])
+router = APIRouter(prefix="/auth", tags=["Identity & RBAC"])
 
 
 @router.get(
     "/me",
     response_model=dict[str, Any],
-    summary="Get authenticated officer profile & roles",
-    description=(
-        "Decodes the Auth0 Bearer JWT and returns the officer's unique identity, "
-        "assigned law enforcement roles, email, and permissions."
-    ),
+    summary="Get officer profile",
+    description="Returns the current officer identity, roles, and permissions.",
 )
 async def get_current_officer_profile(user: User = Depends(get_current_user)) -> dict[str, Any]:
-    """
-    Returns the authenticated officer profile from the Auth0 JWT.
-    """
+    """Returns the current officer profile."""
     return {
         "status": "authenticated",
         "sub": user.sub,

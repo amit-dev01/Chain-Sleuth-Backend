@@ -75,7 +75,7 @@ async def get_audit_logs() -> AuditLogsResponse:
                 id="AUD-INIT-001",
                 officer="Inspector Rajesh Sharma (Cyber Cell HQ)",
                 action="SYSTEM_INITIALIZE",
-                query="Auth0 RS256 JWKS Key Rotation & Supabase Cloud PostgreSQL Verified",
+                query="Supabase Cloud PostgreSQL Verified & Neo4j Graph Schema Initialized",
                 timestamp=datetime.now(UTC).isoformat(),
             ),
             AuditLogItem(
