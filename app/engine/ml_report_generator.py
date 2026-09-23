@@ -131,10 +131,23 @@ INVESTIGATIVE DIRECTIVES:
 {chr(10).join(f"- {r}" for r in result.recommendations)}
 """
 
-        response = await client.aio.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=[_SYSTEM_PROMPT, prompt],
+        import asyncio
+        from google.genai import types as genai_types
+
+        target_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
+        gen_config = genai_types.GenerateContentConfig(
+            temperature=0.2,
+            max_output_tokens=2048,
+            thinking_config=genai_types.ThinkingConfig(thinking_budget=0),
         )
+
+        call_coro = client.aio.models.generate_content(
+            model=target_model,
+            contents=[_SYSTEM_PROMPT, prompt],
+            config=gen_config,
+        )
+
+        response = await asyncio.wait_for(call_coro, timeout=6.0)
 
         text = response.text or ""
         if text.strip():
