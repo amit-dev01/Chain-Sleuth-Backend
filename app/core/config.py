@@ -32,11 +32,15 @@ class Settings(BaseSettings):
     NEO4J_PASSWORD: str = "password"
     NEO4J_DATABASE: str = ""                   # Leave empty for server default
 
-    # ── Relational Database / Supabase (Cloud PostgreSQL) ───────────────────────
+    # ── Relational Database / Supabase (Cloud PostgreSQL + Auth) ────────────────
     SUPABASE_URL: str = ""                     # https://<project-ref>.supabase.co
-    SUPABASE_KEY: str = ""                     # Anon public API key or service role key
-    SUPABASE_SERVICE_ROLE_KEY: str = ""        # Optional: Admin service role key for backend operations
+    SUPABASE_KEY: str = ""                     # Anon public API key
+    SUPABASE_SERVICE_ROLE_KEY: str = ""        # Admin service role key for backend operations
+    SUPABASE_JWT_SECRET: str = ""              # Settings → API → JWT Secret (for token verification)
     DATABASE_URL: str = ""                     # postgresql://... connection URI
+
+    # ── Authentication ────────────────────────────────────────────────────────
+    AUTH_ENABLED: bool = False                 # True to enforce Supabase JWT Bearer token verification
 
     # ── Cache / Queue ───────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
