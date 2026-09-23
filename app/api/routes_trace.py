@@ -30,6 +30,10 @@ from app.engine.typology import (
     peeling_chain_detector,
     zero_gas_burner_detector,
 )
+from app.engine.ml_anomaly_detector import detect_anomalies
+from app.engine.ml_ensemble_scorer import compute_ensemble_risk_score
+from app.engine.ml_risk_scorer import score_nodes_with_gnn
+from app.engine.ml_typology_classifier import classify_typology_with_ml
 from app.models.schemas import Chain, TraceRequest, TraceResult
 from app.vasp.attribution import attribute_vasp
 
@@ -104,7 +108,13 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
             detail=f"Traversal engine error: {exc}",
         )
 
-    # ── 4. Typology detection ─────────────────────────────────────────────────
+    # ── 3b. GNN Risk Scoring (GraphSAGE ONNX) ─────────────────────────────────
+    try:
+        result.nodes = score_nodes_with_gnn(result.nodes, result.edges)
+    except Exception as exc:
+        log.warning("GNN risk scoring failed (non-fatal): %s", exc)
+
+    # ── 4. Typology detection (Rule-based) ────────────────────────────────────
     try:
         peel_summary      = peeling_chain_detector(result.nodes, result.edges)
         funder_summary    = await first_funder_trace(result.nodes, result.edges)
@@ -129,6 +139,12 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
         # Non-fatal: log and continue
         log.warning("Typology detection failed (non-fatal): %s", exc)
 
+    # ── 4b. ML Typology Classification (XGBoost) ─────────────────────────────
+    try:
+        result.nodes = classify_typology_with_ml(result.nodes, result.edges)
+    except Exception as exc:
+        log.warning("ML typology classification failed (non-fatal): %s", exc)
+
     # ── 5. VASP attribution step-back ─────────────────────────────────────────
     try:
         attribution = await attribute_vasp(
@@ -144,6 +160,15 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
             )
     except Exception as exc:
         log.warning("VASP attribution failed (non-fatal): %s", exc)
+
+    # ── 5b. Unsupervised Anomaly Detection & Ensemble Risk Calibration ────────
+    try:
+        anomaly_scores = detect_anomalies(result.nodes, result.edges)
+        calibrated_risk = compute_ensemble_risk_score(result, anomaly_scores)
+        result = result.model_copy(update={"overall_risk_score": calibrated_risk})
+        log.info("Ensemble Risk Score calibrated to %d/100", calibrated_risk)
+    except Exception as exc:
+        log.warning("Ensemble risk scoring failed (non-fatal): %s", exc)
 
     # ── 6. Generate Automated Investigative Recommendations & SLA Alert ────────
     try:

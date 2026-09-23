@@ -28,6 +28,7 @@ from app.api import (
     routes_fir,
     routes_ncrp,
     routes_notice,
+    routes_report,
     routes_trace,
     routes_vasp,
 )
@@ -188,6 +189,7 @@ app.include_router(routes_notice.router, prefix=_API_PREFIX)
 app.include_router(routes_ncrp.router,   prefix=_API_PREFIX)
 app.include_router(routes_vasp.router,   prefix=_API_PREFIX)
 app.include_router(routes_audit.router,  prefix=_API_PREFIX)
+app.include_router(routes_report.router, prefix=_API_PREFIX)
 
 
 
