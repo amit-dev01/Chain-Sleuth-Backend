@@ -36,7 +36,6 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""                     # https://<project-ref>.supabase.co
     SUPABASE_KEY: str = ""                     # Anon public API key
     SUPABASE_SERVICE_ROLE_KEY: str = ""        # Admin service role key for backend operations
-    SUPABASE_JWT_SECRET: str = ""              # Settings → API → JWT Secret (for token verification)
     DATABASE_URL: str = ""                     # postgresql://... connection URI
 
     # ── Authentication ────────────────────────────────────────────────────────
