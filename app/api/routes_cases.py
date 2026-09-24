@@ -28,6 +28,7 @@ from app.legal.pdf_generator import generate_fir_pdf, generate_section_94_pdf
 from app.models.schemas import (
     CaseSummary,
     Chain,
+    EvidenceCertificateResponse,
     FIRCreate,
     LegalNoticePayload,
     TraceResult,
@@ -347,6 +348,48 @@ async def get_case_layering_analysis(case_id: str) -> dict[str, Any]:
     return analysis.to_dict()
 
 
+def build_authoritative_evidence_graph(
+    trace_result: TraceResult,
+    clusters: list | None = None,
+) -> tuple[dict[str, Any], bytes, str]:
+    """
+    Build the authoritative evidence graph representation and compute its deterministic SHA-256 hash.
+    Shared by export-bundle and evidence-cert to guarantee identical integrity hashes.
+    """
+    if clusters is None:
+        clusters = compute_case_clusters(
+            case_id=trace_result.case_id,
+            nodes=trace_result.nodes,
+            edges=trace_result.edges,
+            attribution=trace_result.attribution,
+        )
+
+    exported_at_str = (
+        trace_result.created_at.isoformat()
+        if hasattr(trace_result.created_at, "isoformat")
+        else str(trace_result.created_at)
+    )
+
+    graph_dict = {
+        "case_id": trace_result.case_id,
+        "suspect_address": trace_result.suspect_address,
+        "chain": trace_result.chain,
+        "overall_risk_score": trace_result.overall_risk_score,
+        "nodes_count": len(trace_result.nodes),
+        "edges_count": len(trace_result.edges),
+        "nodes": [n.model_dump() for n in trace_result.nodes],
+        "edges": [e.model_dump(mode="json") for e in trace_result.edges],
+        "attribution": trace_result.attribution.model_dump() if trace_result.attribution else None,
+        "clusters": [c.model_dump() for c in clusters],
+        "recommendations": trace_result.recommendations,
+        "sla_cashout_alert": trace_result.sla_cashout_alert,
+        "exported_at": exported_at_str,
+    }
+    graph_bytes = json.dumps(graph_dict, indent=2, default=str).encode("utf-8")
+    graph_sha256 = hashlib.sha256(graph_bytes).hexdigest()
+    return graph_dict, graph_bytes, graph_sha256
+
+
 @router.get(
     "/{case_id}/export-bundle",
     summary="Export Court Evidence Package ZIP Bundle",
@@ -384,23 +427,7 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
         estimated_loss_inr = 250000.0
 
     # 1. Evidence Graph JSON
-    graph_dict = {
-        "case_id": trace_result.case_id,
-        "suspect_address": trace_result.suspect_address,
-        "chain": trace_result.chain,
-        "overall_risk_score": trace_result.overall_risk_score,
-        "nodes_count": len(trace_result.nodes),
-        "edges_count": len(trace_result.edges),
-        "nodes": [n.model_dump() for n in trace_result.nodes],
-        "edges": [e.model_dump(mode="json") for e in trace_result.edges],
-        "attribution": trace_result.attribution.model_dump() if trace_result.attribution else None,
-        "clusters": [c.model_dump() for c in clusters],
-        "recommendations": trace_result.recommendations,
-        "sla_cashout_alert": trace_result.sla_cashout_alert,
-        "exported_at": datetime.now(UTC).isoformat(),
-    }
-    graph_bytes = json.dumps(graph_dict, indent=2, default=str).encode("utf-8")
-    graph_sha256 = hashlib.sha256(graph_bytes).hexdigest()
+    graph_dict, graph_bytes, graph_sha256 = build_authoritative_evidence_graph(trace_result, clusters)
 
     # 2. Section 63 BSA Certificate JSON
     certificate_dict = {
@@ -412,7 +439,7 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
         "evidence_sha256_hash": graph_sha256,
         "total_nodes_analyzed": len(trace_result.nodes),
         "total_transactions_traced": len(trace_result.edges),
-        "attributed_vasp": trace_result.attribution.vasp_name if trace_result.attribution else "Unattributed / Non-Custodial",
+        "attributed_vasp": trace_result.attribution.vasp_name if trace_result.attribution else None,
         "generated_at": datetime.now(UTC).isoformat(),
         "system_identifier": "ChainSleuth Automated Blockchain Forensics Engine v2.0",
         "forensic_declarations": [
@@ -565,4 +592,42 @@ async def export_case_evidence_bundle(case_id: str) -> StreamingResponse:
             "X-Case-ID": case_id,
         },
     )
+
+
+# ── GET /cases/{caseId}/evidence-cert ─────────────────────────────────────────
+
+@router.get(
+    "/{case_id}/evidence-cert",
+    response_model=EvidenceCertificateResponse,
+    summary="Get Section 63 BSA Digital Evidence Certificate Metadata",
+    description=(
+        "Retrieves authoritative Section 63 BSA electronic evidence certificate metadata "
+        "for the specified case, including deterministic SHA-256 evidence checksum, "
+        "total nodes analyzed, total transactions traced, and VASP attribution."
+    ),
+)
+async def get_case_evidence_cert(case_id: str) -> EvidenceCertificateResponse:
+    """
+    Return statutory Section 63 BSA / Section 65B electronic record certificate data
+    generated deterministically from the authoritative case evidence graph.
+    """
+    trace_result = await get_case(case_id)
+    _, _, graph_sha256 = build_authoritative_evidence_graph(trace_result)
+
+    attributed_vasp_name = (
+        trace_result.attribution.vasp_name
+        if trace_result.attribution and trace_result.attribution.vasp_name
+        else None
+    )
+
+    return EvidenceCertificateResponse(
+        certificate_type="CERTIFICATE UNDER SECTION 63 OF THE BHARATIYA SAKSHYA ADHINIYAM (BSA), 2023",
+        former_equivalent="Section 65B of the Indian Evidence Act, 1872",
+        case_id=trace_result.case_id,
+        evidence_sha256_hash=graph_sha256,
+        total_nodes_analyzed=len(trace_result.nodes),
+        total_transactions_traced=len(trace_result.edges),
+        attributed_vasp=attributed_vasp_name,
+    )
+
 

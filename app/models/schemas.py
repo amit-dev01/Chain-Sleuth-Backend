@@ -318,3 +318,44 @@ class CaseSummary(BaseModel):
     attributed_vasp: str | None = None
     attributed_vasp_name: str | None = None
     created_at: datetime
+
+
+# ── 11. EvidenceCertificateResponse ──────────────────────────────────────────
+
+class EvidenceCertificateResponse(BaseModel):
+    """
+    Electronic record admissibility certificate metadata under Section 63 BSA 2023
+    (formerly Section 65B of the Indian Evidence Act, 1872).
+    """
+
+    certificate_type: str = Field(
+        ...,
+        description="Statutory certificate designation under Indian evidence law",
+    )
+    former_equivalent: str = Field(
+        ...,
+        description="Historical statutory equivalent under the Indian Evidence Act",
+    )
+    case_id: str = Field(
+        ...,
+        description="Investigation case identifier",
+    )
+    evidence_sha256_hash: str = Field(
+        ...,
+        description="Deterministic SHA-256 cryptographic checksum of authoritative evidence",
+    )
+    total_nodes_analyzed: int = Field(
+        ...,
+        ge=0,
+        description="Total unique wallet nodes analyzed in the investigation graph",
+    )
+    total_transactions_traced: int = Field(
+        ...,
+        ge=0,
+        description="Total transfer transactions traced on the blockchain",
+    )
+    attributed_vasp: str | None = Field(
+        default=None,
+        description="Authoritative VASP attribution name, or null if unassigned / non-custodial",
+    )
+
