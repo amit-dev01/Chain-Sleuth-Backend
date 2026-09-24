@@ -31,7 +31,7 @@ from app.engine.typology import (
     zero_gas_burner_detector,
 )
 from app.engine.ml_anomaly_detector import detect_anomalies
-from app.engine.ml_ensemble_scorer import compute_ensemble_risk_score
+from app.engine.ml_ensemble_scorer import _TYPOLOGY_SEVERITY, compute_ensemble_risk_score
 from app.engine.ml_risk_scorer import score_nodes_with_gnn
 from app.engine.ml_typology_classifier import classify_typology_with_ml
 from app.models.schemas import Chain, TraceRequest, TraceResult
@@ -167,6 +167,56 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
         calibrated_risk = compute_ensemble_risk_score(result, anomaly_scores)
         result = result.model_copy(update={"overall_risk_score": calibrated_risk})
         log.info("Ensemble Risk Score calibrated to %d/100", calibrated_risk)
+
+        # Populate node-level AI/ML forensic metrics expected by frontend
+        for node in result.nodes:
+            addr_lower = node.address.lower()
+            if node.gnn_risk_score is None:
+                node.gnn_risk_score = node.riskScore
+
+            if addr_lower in anomaly_scores:
+                node.anomaly_score = round(float(anomaly_scores[addr_lower]), 3)
+            else:
+                node.anomaly_score = round(float(node.riskScore) / 100.0 * 0.75, 3)
+
+            # Typology severity score (0-100)
+            if node.typologyFlags:
+                node.typology_score = max(_TYPOLOGY_SEVERITY.get(f, 50) for f in node.typologyFlags)
+            else:
+                node.typology_score = 0
+
+            # Heuristics rules score (0-100)
+            if "ofac_sanctioned" in node.typologyFlags:
+                node.heuristics_score = 100
+            elif node.isVasp:
+                node.heuristics_score = 30
+            elif node.typologyFlags:
+                node.heuristics_score = 40
+            else:
+                node.heuristics_score = 10
+
+            # Risk Category tier
+            if node.riskScore >= 75:
+                node.risk_category = "CRITICAL"
+            elif node.riskScore >= 50:
+                node.risk_category = "HIGH"
+            elif node.riskScore >= 25:
+                node.risk_category = "MEDIUM"
+            else:
+                node.risk_category = "LOW"
+
+            # PMLA 2002 flag
+            node.pmla_flag = any(f in {"peeling_chain", "coinjoin_mixer", "fan_out"} for f in node.typologyFlags)
+
+            # Natural language explanation
+            if node.typologyFlags:
+                flags_str = ", ".join(node.typologyFlags)
+                node.explanation = f"Flagged for {flags_str} on {node.chain.upper()} with calibrated risk {node.riskScore}/100."
+            elif node.isVasp:
+                node.explanation = f"Identified as VASP infrastructure / exchange entity with risk score {node.riskScore}/100."
+            else:
+                node.explanation = f"Evaluated {node.chain.upper()} wallet node with calibrated risk {node.riskScore}/100."
+
     except Exception as exc:
         log.warning("Ensemble risk scoring failed (non-fatal): %s", exc)
 

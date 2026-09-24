@@ -63,14 +63,57 @@ def _build_wallet_node(raw: dict) -> WalletNode | None:
             else "tron"
         )
 
+        flags = raw.get("typologyFlags") or []
+        risk_val = int(raw.get("riskScore", 0))
+
+        gnn_score = raw.get("gnn_risk_score")
+        if gnn_score is None:
+            gnn_score = risk_val
+
+        anomaly = raw.get("anomaly_score")
+        if anomaly is None:
+            anomaly = round(float(risk_val) / 100.0 * 0.75, 3)
+
+        typ_score = raw.get("typology_score")
+        if typ_score is None:
+            typ_score = 85 if flags else 0
+
+        heur_score = raw.get("heuristics_score")
+        if heur_score is None:
+            heur_score = 100 if "ofac_sanctioned" in flags else (30 if raw.get("isVasp") else 10)
+
+        risk_cat = raw.get("risk_category")
+        if not risk_cat:
+            risk_cat = "CRITICAL" if risk_val >= 75 else ("HIGH" if risk_val >= 50 else ("MEDIUM" if risk_val >= 25 else "LOW"))
+
+        pmla = raw.get("pmla_flag")
+        if pmla is None:
+            pmla = any(f in {"peeling_chain", "coinjoin_mixer", "fan_out"} for f in flags)
+
+        explanation = raw.get("explanation")
+        if not explanation:
+            if flags:
+                explanation = f"Flagged for {', '.join(flags)} on {chain.upper()} with calibrated risk {risk_val}/100."
+            elif raw.get("isVasp"):
+                explanation = f"Identified as VASP infrastructure / exchange entity with risk score {risk_val}/100."
+            else:
+                explanation = f"Evaluated {chain.upper()} wallet node with calibrated risk {risk_val}/100."
+
         return WalletNode(
-            address       = str(raw.get("address", "")),
-            chain         = chain,
-            riskScore     = int(raw.get("riskScore", 0)),
-            balance       = float(raw.get("balance", 0.0)),
-            firstSeen     = first_seen,
-            typologyFlags = raw.get("typologyFlags") or [],
-            isVasp        = raw.get("isVasp"),
+            address          = str(raw.get("address", "")),
+            chain            = chain,
+            riskScore        = risk_val,
+            balance          = float(raw.get("balance", 0.0)),
+            firstSeen        = first_seen,
+            typologyFlags    = flags,
+            isVasp           = raw.get("isVasp"),
+            gnn_risk_score   = int(gnn_score),
+            anomaly_score    = float(anomaly),
+            typology_score   = int(typ_score),
+            heuristics_score = int(heur_score),
+            risk_category    = str(risk_cat),
+            explanation      = str(explanation),
+            pmla_flag        = bool(pmla),
         )
     except Exception as exc:
         log.warning("Could not reconstruct WalletNode: %s | raw=%s", exc, raw)

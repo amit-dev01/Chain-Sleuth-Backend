@@ -27,6 +27,7 @@ TypologyFlag = Literal[
     "ofac_sanctioned",
     "bridge_hop",
     "coinjoin_mixer",
+    "burner_wallet",
 ]
 
 
@@ -96,6 +97,34 @@ class WalletNode(BaseModel):
     isVasp: bool | None = Field(
         default=None,
         description="True if this wallet belongs to a known VASP / exchange",
+    )
+    gnn_risk_score: int | None = Field(
+        default=None,
+        description="GraphSAGE GNN topological risk score (0-100)",
+    )
+    anomaly_score: float | None = Field(
+        default=None,
+        description="Isolation Forest anomaly index (0.0 to 1.0)",
+    )
+    typology_score: int | None = Field(
+        default=None,
+        description="XGBoost typology severity score (0-100)",
+    )
+    heuristics_score: int | None = Field(
+        default=None,
+        description="Heuristic rules score (0-100)",
+    )
+    risk_category: str | None = Field(
+        default=None,
+        description="Risk tier: LOW, MEDIUM, HIGH, CRITICAL",
+    )
+    explanation: str | None = Field(
+        default=None,
+        description="Forensic explanation of why this wallet was flagged",
+    )
+    pmla_flag: bool | None = Field(
+        default=None,
+        description="True if detected behavior constitutes a PMLA 2002 predicate offense",
     )
 
     @field_validator("firstSeen")

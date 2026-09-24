@@ -140,6 +140,7 @@ def score_nodes_with_gnn(
         for i, node in enumerate(nodes):
             # Probability of illicit class (class 1) * 100
             ml_risk = int(probs[i, 1] * 100)
+            node.gnn_risk_score = ml_risk
             # Hard floor for OFAC sanctioned
             if "ofac_sanctioned" in node.typologyFlags:
                 node.riskScore = 100
