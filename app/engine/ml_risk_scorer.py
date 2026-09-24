@@ -70,12 +70,17 @@ def _extract_node_features(node: WalletNode, edges: list[TransferEdge]) -> list[
     out_vol = sum(e.value for e in out_edges)
     pass_through = (out_vol / (in_vol + 1e-9)) if in_vol > 0 else 0.0
 
+    # Scale volume and balance using log1p to match Elliptic normalized feature distribution
+    bal_scaled = float(np.log1p(max(0.0, node.balance))) / 5.0
+    in_vol_scaled = float(np.log1p(max(0.0, in_vol))) / 5.0
+    out_vol_scaled = float(np.log1p(max(0.0, out_vol))) / 5.0
+
     features = [
-        float(node.balance),
+        bal_scaled,
         float(len(in_edges)),
         float(len(out_edges)),
-        float(in_vol),
-        float(out_vol),
+        in_vol_scaled,
+        out_vol_scaled,
         float(min(5.0, pass_through)),
         1.0 if node.isVasp else 0.0,
         float(len(node.typologyFlags)),

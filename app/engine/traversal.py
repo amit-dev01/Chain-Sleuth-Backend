@@ -64,14 +64,25 @@ def _make_wallet_node(
 
 
 def _make_transfer_edge(transfer: dict) -> TransferEdge:
+    raw_ts = transfer.get("timestamp") or 0
+    if isinstance(raw_ts, (int, float)):
+        # Normalize milliseconds to seconds if needed
+        ts_sec = raw_ts / 1000.0 if raw_ts > 1e11 else float(raw_ts)
+        try:
+            ts_dt = datetime.fromtimestamp(ts_sec, tz=UTC)
+        except Exception:
+            ts_dt = datetime.now(UTC)
+    else:
+        ts_dt = datetime.now(UTC)
+
     return TransferEdge.model_validate(
         {
-            "txHash":    transfer["tx_hash"],
-            "from":      transfer["from_address"],
-            "to":        transfer["to_address"],
-            "value":     transfer["value"],
-            "token":     transfer["token"],
-            "timestamp": datetime.fromtimestamp(transfer["timestamp"], tz=UTC),
+            "txHash":    transfer.get("tx_hash") or transfer.get("txHash") or "0x0",
+            "from":      transfer.get("from_address") or transfer.get("from") or "",
+            "to":        transfer.get("to_address") or transfer.get("to") or "",
+            "value":     float(transfer.get("value") or 0.0),
+            "token":     str(transfer.get("token") or "USDT"),
+            "timestamp": ts_dt,
         }
     )
 
