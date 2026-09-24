@@ -196,6 +196,15 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
             else:
                 node.heuristics_score = 10
 
+            # Calibrate composite node riskScore using ensemble weights
+            comp_score = int(
+                0.40 * float(node.gnn_risk_score or 0) +
+                0.30 * float(node.typology_score or 0) +
+                0.20 * float((node.anomaly_score or 0.0) * 100.0) +
+                0.10 * float(node.heuristics_score or 10)
+            )
+            node.riskScore = max(0, min(100, comp_score))
+
             # Risk Category tier
             if node.riskScore >= 75:
                 node.risk_category = "CRITICAL"
@@ -237,7 +246,7 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
     except Exception as exc:
         log.warning("Failed to generate recommendations (non-fatal): %s", exc)
 
-    # ── 7. Persist Case node ──────────────────────────────────────────────────
+    # ── 7. Persist Case node & AI/ML Wallet properties ────────────────────────
     try:
         await save_trace_result({
             "case_id":            result.case_id,
@@ -249,6 +258,8 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
             "edge_count":         len(result.edges),
             "attributed_vasp":    result.attribution.vasp_name if result.attribution else None,
             "attribution":        result.attribution.model_dump(mode="json") if result.attribution else None,
+            "nodes":              [n.model_dump(mode="json") for n in result.nodes],
+            "edges":              [e.model_dump(mode="json") for e in result.edges],
         })
     except Exception as exc:
         log.warning("Failed to persist Case node (non-fatal): %s", exc)

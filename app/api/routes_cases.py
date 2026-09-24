@@ -17,13 +17,27 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
-from app.core.database import get_case_by_id
+from app.core.database import batch_update_wallet_nodes, get_case_by_id
 from app.core.database import list_cases as db_list_cases
 from app.engine.bridge_resolver import scan_edges_for_bridge_hops
 from app.engine.clustering import CaseClustersResponse, compute_case_clusters
 from app.engine.layering_analyzer import analyze_layering_and_intermediaries
+from app.engine.ml_anomaly_detector import detect_anomalies
+from app.engine.ml_ensemble_scorer import _TYPOLOGY_SEVERITY, compute_ensemble_risk_score
+from app.engine.ml_risk_scorer import score_nodes_with_gnn
+from app.engine.ml_typology_classifier import classify_typology_with_ml
 from app.engine.privacy_tracer import generate_privacy_coin_dossier
 from app.engine.recommendations import generate_recommendations
+from app.engine.typology import (
+    bridge_hop_detector,
+    coinjoin_mixer_detector,
+    dex_swap_detector,
+    fan_out_detector,
+    first_funder_trace,
+    ofac_sanctions_detector,
+    peeling_chain_detector,
+    zero_gas_burner_detector,
+)
 from app.legal.pdf_generator import generate_fir_pdf, generate_section_94_pdf
 from app.models.schemas import (
     CaseSummary,
@@ -183,6 +197,96 @@ async def get_case(case_id: str) -> TraceResult:
     nodes = [n for raw in data.get("nodes", []) if (n := _build_wallet_node(raw)) is not None]
     edges = [e for raw in data.get("edges", []) if (e := _build_transfer_edge(raw)) is not None]
 
+    # Dynamically score nodes with AI/ML ensemble if not previously persisted
+    needs_ml_scoring = any(
+        n.gnn_risk_score is None or (n.gnn_risk_score == 0 and (n.typology_score or 0) == 0 and (n.anomaly_score or 0.0) == 0.0)
+        for n in nodes
+    )
+    anomaly_scores: dict[str, float] = {}
+    if needs_ml_scoring and nodes:
+        try:
+            # 1. GNN topological risk scoring
+            nodes = score_nodes_with_gnn(nodes, edges)
+
+            # 2. Rule-based Typology Detectors
+            peeling_chain_detector(nodes, edges)
+            try:
+                await first_funder_trace(nodes, edges)
+            except Exception as funder_err:
+                log.warning("Funder trace skipped for case %s: %s", case_id, funder_err)
+            fan_out_detector(nodes, edges)
+            zero_gas_burner_detector(nodes, edges)
+            dex_swap_detector(nodes, edges)
+            ofac_sanctions_detector(nodes, edges)
+            bridge_hop_detector(nodes, edges)
+            coinjoin_mixer_detector(nodes, edges)
+
+            # 3. XGBoost ML Typology Classification
+            nodes = classify_typology_with_ml(nodes, edges)
+
+            # 4. Isolation Forest Anomaly Detection
+            anomaly_scores = detect_anomalies(nodes, edges)
+
+            # 5. Populate calibrated node-level AI/ML fields
+            for node in nodes:
+                addr_lower = node.address.lower()
+                if node.gnn_risk_score is None:
+                    node.gnn_risk_score = node.riskScore
+
+                if addr_lower in anomaly_scores:
+                    node.anomaly_score = round(float(anomaly_scores[addr_lower]), 3)
+                else:
+                    node.anomaly_score = round(float(node.riskScore) / 100.0 * 0.75, 3)
+
+                if node.typologyFlags:
+                    typ_severity = max(_TYPOLOGY_SEVERITY.get(f, 50) for f in node.typologyFlags)
+                    node.typology_score = max(node.typology_score or 0, typ_severity)
+                elif node.typology_score is None:
+                    node.typology_score = 0
+
+                if "ofac_sanctioned" in node.typologyFlags:
+                    node.heuristics_score = 100
+                elif node.isVasp:
+                    node.heuristics_score = 30
+                elif node.typologyFlags:
+                    node.heuristics_score = 40
+                else:
+                    node.heuristics_score = 10
+
+                # Calibrate composite node riskScore using ensemble weights
+                comp_score = int(
+                    0.40 * float(node.gnn_risk_score or 0) +
+                    0.30 * float(node.typology_score or 0) +
+                    0.20 * float((node.anomaly_score or 0.0) * 100.0) +
+                    0.10 * float(node.heuristics_score or 10)
+                )
+                node.riskScore = max(0, min(100, comp_score))
+
+                if node.riskScore >= 75:
+                    node.risk_category = "CRITICAL"
+                elif node.riskScore >= 50:
+                    node.risk_category = "HIGH"
+                elif node.riskScore >= 25:
+                    node.risk_category = "MEDIUM"
+                else:
+                    node.risk_category = "LOW"
+
+                node.pmla_flag = any(f in {"peeling_chain", "coinjoin_mixer", "fan_out"} for f in node.typologyFlags)
+
+                if node.typologyFlags:
+                    flags_str = ", ".join(node.typologyFlags)
+                    node.explanation = f"Flagged for {flags_str} on {node.chain.upper()} with calibrated risk {node.riskScore}/100."
+                elif node.isVasp:
+                    node.explanation = f"Identified as VASP infrastructure / exchange entity with risk score {node.riskScore}/100."
+                else:
+                    node.explanation = f"Evaluated {node.chain.upper()} wallet node with calibrated risk {node.riskScore}/100."
+
+            # Asynchronously update Neo4j with full AI/ML properties so future reads are instant
+            import asyncio
+            asyncio.create_task(batch_update_wallet_nodes([n.model_dump(mode="json") for n in nodes]))
+        except Exception as exc:
+            log.warning("Dynamic ML scoring failed for case %s (non-fatal): %s", case_id, exc)
+
     # Parse created_at from the Neo4j datetime string
     try:
         created_at = datetime.fromisoformat(data["created_at"].replace("Z", "+00:00"))
@@ -219,6 +323,21 @@ async def get_case(case_id: str) -> TraceResult:
     except Exception as exc:
         log.warning("Could not generate recommendations for case %s: %s", case_id, exc)
 
+    overall_risk = int(data.get("overall_risk_score", 0))
+    if overall_risk == 0 and nodes:
+        temp_result = TraceResult(
+            case_id            = data["case_id"],
+            suspect_address    = data["suspect_address"],
+            chain              = data["chain"],
+            nodes              = nodes,
+            edges              = edges,
+            attribution        = attribution,
+            overall_risk_score = 0,
+            created_at         = created_at,
+            status             = data.get("status", "completed"),
+        )
+        overall_risk = compute_ensemble_risk_score(temp_result, anomaly_scores)
+
     return TraceResult(
         case_id            = data["case_id"],
         suspect_address    = data["suspect_address"],
@@ -226,7 +345,7 @@ async def get_case(case_id: str) -> TraceResult:
         nodes              = nodes,
         edges              = edges,
         attribution        = attribution,
-        overall_risk_score = int(data.get("overall_risk_score", 0)),
+        overall_risk_score = overall_risk,
         created_at         = created_at,
         status             = data.get("status", "completed"),
         recommendations    = recs,

@@ -253,6 +253,38 @@ async def batch_merge_wallet_nodes(nodes: list[dict[str, Any]]) -> None:
         await session.run(cypher, batch=nodes)
 
 
+async def batch_update_wallet_nodes(nodes: list[dict[str, Any]]) -> None:
+    """
+    Batch update :Wallet nodes in Neo4j with their evaluated AI/ML and forensic properties:
+    riskScore, gnn_risk_score, anomaly_score, typology_score, heuristics_score,
+    typologyFlags, isVasp, risk_category, explanation, pmla_flag.
+    """
+    if not nodes:
+        return
+
+    cypher = """
+        UNWIND $batch AS item
+        MERGE (w:Wallet {address: item.address, chain: item.chain})
+        ON CREATE SET
+            w.balance          = coalesce(item.balance, 0.0),
+            w.firstSeen        = coalesce(item.firstSeen, datetime()),
+            w.createdAt        = datetime()
+        SET w.riskScore        = item.riskScore,
+            w.typologyFlags    = item.typologyFlags,
+            w.isVasp           = item.isVasp,
+            w.gnn_risk_score   = item.gnn_risk_score,
+            w.anomaly_score    = item.anomaly_score,
+            w.typology_score   = item.typology_score,
+            w.heuristics_score = item.heuristics_score,
+            w.risk_category    = item.risk_category,
+            w.explanation      = item.explanation,
+            w.pmla_flag        = item.pmla_flag,
+            w.updatedAt        = datetime()
+    """
+    async with get_session() as session:
+        await session.run(cypher, batch=nodes)
+
+
 async def merge_vasp_node(
     name: str,
     is_fiu_registered: bool,
@@ -592,6 +624,32 @@ async def save_trace_result(trace_result: dict[str, Any]) -> None:
             attributedVasp  = attributed_vasp,
             attributionJson = attr_json,
         )
+
+    # Batch update wallet nodes with AI/ML forensic metrics if provided
+    if nodes_list:
+        try:
+            await batch_update_wallet_nodes(nodes_list)
+        except Exception as exc:
+            log.warning("Could not batch update wallet nodes for case %s: %s", trace_result.get("case_id"), exc)
+
+    # Pre-cache complete case result in Redis for instant high-speed retrieval
+    if nodes_list:
+        cache_key = f"case:{trace_result.get('case_id')}"
+        try:
+            cached_payload = {
+                "case_id":            trace_result["case_id"],
+                "suspect_address":    trace_result["suspect_address"],
+                "chain":              trace_result["chain"],
+                "overall_risk_score": trace_result["overall_risk_score"],
+                "status":             trace_result.get("status", "completed"),
+                "nodes":              nodes_list,
+                "edges":              edges_list,
+                "attribution":        attr_data,
+                "created_at":         datetime.now(UTC).isoformat(),
+            }
+            await cache_set(cache_key, cached_payload, ttl=300)
+        except Exception as exc:
+            log.warning("Could not pre-cache trace result in Redis: %s", exc)
 
     # Sync case metadata to Supabase Cloud PostgreSQL
     try:
