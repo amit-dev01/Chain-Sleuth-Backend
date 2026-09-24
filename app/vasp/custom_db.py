@@ -18,6 +18,7 @@ import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from app.core.supabase import (
     is_supabase_enabled,
     supabase_count_labels,

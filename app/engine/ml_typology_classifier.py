@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
-from app.models.schemas import TransferEdge, WalletNode
+from app.models.schemas import TransferEdge, TypologyFlag, WalletNode
 
 log = logging.getLogger(__name__)
 
@@ -124,10 +124,14 @@ def classify_typology_with_ml(
 
         for flag_name, model in _MODELS.items():
             probs = model.predict_proba(X_scaled)[:, 1]
+            canonical_flag: TypologyFlag = cast(
+                TypologyFlag,
+                "zero_gas_burner" if flag_name == "burner_wallet" else flag_name,
+            )
             for i, node in enumerate(nodes):
-                if probs[i] >= probability_threshold and flag_name not in node.typologyFlags:
-                    node.typologyFlags.append(flag_name)
-                    log.info("ML flagged %s as '%s' (conf=%.2f)", node.address, flag_name, probs[i])
+                if probs[i] >= probability_threshold and canonical_flag not in node.typologyFlags:
+                    node.typologyFlags.append(canonical_flag)
+                    log.info("ML flagged %s as '%s' (conf=%.2f)", node.address, canonical_flag, probs[i])
 
     except Exception as exc:
         log.warning("XGBoost typology classification error: %s", exc)
