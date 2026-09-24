@@ -253,6 +253,10 @@ async def first_funder_trace(
         if node.balance > 0:
             continue
 
+        # Native TRX gas-fee activation tracing is only applicable to TRON wallets
+        if node.chain != "tron" and not node.address.startswith("T"):
+            continue
+
         zero_balance_wallets.append(node.address)
         log.info("Zero-balance wallet detected: %s – tracing TRX funder.", node.address)
 
