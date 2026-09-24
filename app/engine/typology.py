@@ -150,6 +150,35 @@ def peeling_chain_detector(
 # 2. First Funder Trace
 # ─────────────────────────────────────────────────────────────────────────────
 
+_B58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+
+def _tron_hex_to_b58(hex_addr: str) -> str:
+    """Convert TRON 41-prefixed hex address from TronGrid contract parameters to Base58Check."""
+    if not hex_addr or hex_addr.startswith("T"):
+        return hex_addr
+    import hashlib
+    clean = hex_addr[2:] if hex_addr.startswith("0x") else hex_addr
+    if len(clean) == 40 and not clean.startswith("41"):
+        clean = "41" + clean
+    try:
+        raw = bytes.fromhex(clean)
+        full = raw + hashlib.sha256(hashlib.sha256(raw).digest()).digest()[:4]
+        n = int.from_bytes(full, "big")
+        chars: list[str] = []
+        while n > 0:
+            n, r = divmod(n, 58)
+            chars.append(_B58_ALPHABET[r])
+        for b in full:
+            if b == 0:
+                chars.append(_B58_ALPHABET[0])
+            else:
+                break
+        return "".join(reversed(chars))
+    except Exception:
+        return hex_addr
+
+
 async def _fetch_trx_activator(
     address: str,
     api_key: str,
@@ -198,15 +227,18 @@ async def _fetch_trx_activator(
 
             # TransferContract = native TRX transfer
             if c_type == "TransferContract":
-                to_addr   = c_params.get("to_address", "")
-                from_addr = c_params.get("owner_address", "")
+                raw_to    = c_params.get("to_address", "")
+                raw_from  = c_params.get("owner_address", "")
                 amount    = c_params.get("amount", 0) / 1_000_000  # SUN → TRX
 
-                if to_addr.lower() == address.lower() and amount > 0:
+                to_b58 = _tron_hex_to_b58(raw_to)
+                from_b58 = _tron_hex_to_b58(raw_from)
+
+                if (to_b58.lower() == address.lower() or raw_to.lower() == address.lower()) and amount > 0:
                     return {
                         "tx_hash":      tx.get("txID", ""),
-                        "from_address": from_addr,
-                        "to_address":   to_addr,
+                        "from_address": from_b58,
+                        "to_address":   to_b58,
                         "amount_trx":   amount,
                         "block_ts":     raw_data.get("timestamp", 0) // 1000,
                     }
