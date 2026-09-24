@@ -97,11 +97,17 @@ def detect_anomalies(
             norm_scores = np.full(len(nodes), 0.5)
 
         for i, node in enumerate(nodes):
-            scores[node.address] = round(float(norm_scores[i]), 3)
+            val = round(float(norm_scores[i]), 3)
+            scores[node.address] = val
+            scores[node.address.lower()] = val
+            node.anomaly_score = val
 
     except Exception as exc:
         log.warning("Isolation Forest scoring failed: %s", exc)
         for node in nodes:
             scores[node.address] = 0.2
+            scores[node.address.lower()] = 0.2
+            if node.anomaly_score is None:
+                node.anomaly_score = 0.2
 
     return scores

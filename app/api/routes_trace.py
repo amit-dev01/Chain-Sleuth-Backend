@@ -181,8 +181,9 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
 
             # Typology severity score (0-100)
             if node.typologyFlags:
-                node.typology_score = max(_TYPOLOGY_SEVERITY.get(f, 50) for f in node.typologyFlags)
-            else:
+                typ_severity = max(_TYPOLOGY_SEVERITY.get(f, 50) for f in node.typologyFlags)
+                node.typology_score = max(node.typology_score or 0, typ_severity)
+            elif node.typology_score is None:
                 node.typology_score = 0
 
             # Heuristics rules score (0-100)

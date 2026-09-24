@@ -122,8 +122,11 @@ def classify_typology_with_ml(
         X = np.array(X_raw, dtype=np.float32)
         X_scaled = _SCALER.transform(X)
 
+        max_probs = np.zeros(len(nodes), dtype=np.float32)
+
         for flag_name, model in _MODELS.items():
             probs = model.predict_proba(X_scaled)[:, 1]
+            max_probs = np.maximum(max_probs, probs)
             canonical_flag: TypologyFlag = cast(
                 TypologyFlag,
                 "zero_gas_burner" if flag_name == "burner_wallet" else flag_name,
@@ -132,6 +135,13 @@ def classify_typology_with_ml(
                 if probs[i] >= probability_threshold and canonical_flag not in node.typologyFlags:
                     node.typologyFlags.append(canonical_flag)
                     log.info("ML flagged %s as '%s' (conf=%.2f)", node.address, canonical_flag, probs[i])
+
+        for i, node in enumerate(nodes):
+            prob_score = int(round(float(max_probs[i]) * 100))
+            if node.typology_score is None or node.typology_score == 0:
+                node.typology_score = prob_score
+            else:
+                node.typology_score = max(node.typology_score, prob_score)
 
     except Exception as exc:
         log.warning("XGBoost typology classification error: %s", exc)
