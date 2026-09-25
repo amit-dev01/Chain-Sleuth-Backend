@@ -55,8 +55,8 @@ _CACHE_TTL = 300  # 5 minutes
 
 # ── Internal Helpers ──────────────────────────────────────────────────────────
 
-def _cache_key(address: str, chain: str) -> str:
-    return f"evm:transfers:{chain.lower()}:{address.lower()}"
+def _cache_key(address: str, chain: str, only_outbound: bool = True) -> str:
+    return f"evm:transfers:{chain.lower()}:{address.lower()}:outbound_{only_outbound}"
 
 
 def _parse_blockscout_transfer(raw: dict[str, Any], chain: str) -> dict[str, Any] | None:
@@ -181,7 +181,7 @@ async def fetch_evm_transfers(
         min_value_usdt: Drop transfers below threshold
     """
     chain_lower = chain.lower()
-    cache_key = _cache_key(address, chain_lower)
+    cache_key = _cache_key(address, chain_lower, only_outbound)
 
     cached = await cache_get(cache_key)
     if cached is not None:
