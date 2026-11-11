@@ -145,11 +145,13 @@ _CORS_ORIGINS = [
     "http://127.0.0.1:5173",
     "https://chainsleuth.in",   # Production frontend
     "https://app.chainsleuth.in",
+    "https://chain-sleuth-six.vercel.app",        # Vercel deployment
+    "https://chain-sleuth-backend.onrender.com",  # Render deployment
 ]
 
 if settings.CORS_ORIGINS:
     for origin in settings.CORS_ORIGINS.split(","):
-        cleaned = origin.strip()
+        cleaned = origin.strip().rstrip("/")
         if cleaned and cleaned not in _CORS_ORIGINS:
             _CORS_ORIGINS.append(cleaned)
 

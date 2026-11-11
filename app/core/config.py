@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
     ENABLE_DOCS: bool = True         # Set to False in production to disable /docs & /redoc
-    CORS_ORIGINS: str = ""           # Comma-separated extra allowed origins (e.g. https://chainsleuth.onrender.com)
+    CORS_ORIGINS: str = "https://chain-sleuth-six.vercel.app,https://chain-sleuth-backend.onrender.com"  # Comma-separated extra allowed origins
 
     @property
     def neo4j_user(self) -> str:
