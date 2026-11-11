@@ -13,16 +13,21 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 
+from app.core.auth import get_current_user
 from app.engine.cioh_clusterer import cluster_bitcoin_cioh, perform_unified_clustering
 from app.models.schemas import TransferEdge, WalletNode
 from app.vasp.custom_db import CustomWalletLabel, get_custom_vasp_db
 from app.vasp.threat_intel import WalletTagResult, tag_wallet
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/vasp", tags=["VASP Identification & Threat Intel"])
+router = APIRouter(
+    prefix="/vasp",
+    tags=["VASP Identification & Threat Intel"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # ── Pydantic Request Models ───────────────────────────────────────────────────

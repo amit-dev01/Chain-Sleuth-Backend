@@ -12,6 +12,7 @@ Provides:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -116,8 +117,10 @@ def supabase_search_labels(
         if entity_type:
             req = req.eq("entity_type", entity_type.lower())
         if query:
-            q = f"%{query}%"
-            req = req.or_(f"address.ilike.{q},entity_name.ilike.{q},notes.ilike.{q},case_reference.ilike.{q}")
+            clean_q = re.sub(r"[,()\"'\\]", "", query).strip()
+            if clean_q:
+                q = f"%{clean_q}%"
+                req = req.or_(f"address.ilike.{q},entity_name.ilike.{q},notes.ilike.{q},case_reference.ilike.{q}")
 
         req = req.order("updated_at", desc=True).range(skip, skip + limit - 1)
         res = req.execute()

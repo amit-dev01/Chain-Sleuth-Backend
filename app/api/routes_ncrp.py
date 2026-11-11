@@ -14,9 +14,10 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 
+from app.core.auth import get_current_user
 from app.core.database import get_session
 from app.engine.chain_router import validate_address
 from app.engine.traversal import run_bfs_trace
@@ -34,7 +35,11 @@ from app.models.schemas import Chain, TraceRequest, TraceResult
 from app.vasp.attribution import attribute_vasp
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/ncrp", tags=["NCRP / SAHYOG Integration"])
+router = APIRouter(
+    prefix="/ncrp",
+    tags=["NCRP / SAHYOG Integration"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # ── Pydantic DTOs ─────────────────────────────────────────────────────────────

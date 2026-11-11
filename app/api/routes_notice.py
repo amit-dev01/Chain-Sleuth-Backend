@@ -11,16 +11,22 @@ GET  /api/v1/notices/{notice_id}/download
 from __future__ import annotations
 
 import logging
+import re
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from app.core.auth import get_current_user
 from app.legal.pdf_generator import OUTPUT_DIR, generate_legal_notice_pdf
 from app.models.schemas import LegalNoticePayload
 
 log    = logging.getLogger(__name__)
-router = APIRouter(prefix="/notices", tags=["Legal Notices"])
+router = APIRouter(
+    prefix="/notices",
+    tags=["Legal Notices"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # ── Response model ────────────────────────────────────────────────────────────
@@ -74,7 +80,7 @@ async def generate_notice(payload: LegalNoticePayload) -> NoticeGenerateResponse
             detail=f"PDF generation error: {exc}",
         )
 
-    pdf_url = f"/static/notices/{pdf_path.name}"
+    pdf_url = f"/api/v1/notices/{notice_ref}/download"
 
     log.info(
         "Notice generated: ref=%s case=%s vasp=%s path=%s",
@@ -106,16 +112,21 @@ async def download_notice(notice_id: str) -> FileResponse:
     *notice_id* is the notice reference (e.g. ``NOTICE-AB12CD34``),
     not the full filename — the ``.pdf`` extension is appended automatically.
     """
-    pdf_path = OUTPUT_DIR / f"{notice_id}.pdf"
+    if not re.match(r"^[A-Za-z0-9_-]+$", notice_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid notice identifier format.",
+        )
 
-    if not pdf_path.exists():
+    resolved_path = (OUTPUT_DIR / f"{notice_id}.pdf").resolve()
+    if not resolved_path.is_relative_to(OUTPUT_DIR.resolve()) or not resolved_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Notice PDF '{notice_id}' not found. Generate it first via POST /notices/generate.",
         )
 
     return FileResponse(
-        path         = str(pdf_path),
+        path         = str(resolved_path),
         media_type   = "application/pdf",
         filename     = f"{notice_id}.pdf",
         headers      = {"Content-Disposition": f'attachment; filename="{notice_id}.pdf"'},

@@ -14,9 +14,11 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.core.auth import get_current_user
 from app.core.database import get_case_by_id, save_trace_result
+from app.core.rate_limit import RateLimiter
 from app.engine.chain_router import DetectedChain, validate_address
 from app.engine.recommendations import generate_recommendations
 from app.engine.traversal import run_bfs_trace
@@ -39,13 +41,18 @@ from app.vasp.attribution import attribute_vasp
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/trace", tags=["Trace"])
+router = APIRouter(
+    prefix="/trace",
+    tags=["Trace"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.post(
     "/",
     response_model=TraceResult,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(RateLimiter(times=20, seconds=60, scope="trace"))],
     summary="Initiate a full blockchain address trace",
     description=(
         "Accepts a TraceRequest and executes the complete ChainSleuth pipeline: "
@@ -106,7 +113,7 @@ async def trace_address(payload: TraceRequest) -> TraceResult:
         log.exception("BFS traversal failed for %s: %s", payload.suspect_address, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Traversal engine error: {exc}",
+            detail="Traversal engine error: Failed to query blockchain explorer or node. Please verify the address and retry.",
         )
 
     # ── 3b. GNN Risk Scoring (GraphSAGE ONNX) ─────────────────────────────────

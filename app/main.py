@@ -16,10 +16,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 from app.api import (
     routes_audit,
@@ -128,16 +128,16 @@ app = FastAPI(
     license_info={
         "name": "Proprietary — Law Enforcement Use Only",
     },
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    docs_url="/docs" if (settings.DEBUG or getattr(settings, "ENABLE_DOCS", True)) else None,
+    redoc_url="/redoc" if (settings.DEBUG or getattr(settings, "ENABLE_DOCS", True)) else None,
+    openapi_url="/openapi.json" if (settings.DEBUG or getattr(settings, "ENABLE_DOCS", True)) else None,
     lifespan=lifespan,
 )
 
 
 # ── Middleware ─────────────────────────────────────────────────────────────────
 
-# CORS — allow the ChainSleuth frontend + localhost dev
+# CORS — strictly allow only configured origins
 _CORS_ORIGINS = [
     "http://localhost:3000",    # React / Next.js dev
     "http://localhost:5173",    # Vite dev
@@ -156,10 +156,9 @@ if settings.CORS_ORIGINS:
 app.add_middleware(
     CORSMiddleware,
     allow_origins     = _CORS_ORIGINS,
-    allow_origin_regex = r"^https?://.*",
     allow_credentials = True,
-    allow_methods     = ["*"],
-    allow_headers     = ["*"],
+    allow_methods     = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers     = ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-Request-ID", "X-Trace-ID"],
     expose_headers    = ["X-Request-ID", "X-Trace-ID"],
     max_age           = 600,    # preflight cache: 10 minutes
 )
@@ -168,13 +167,32 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
-# ── Static files ───────────────────────────────────────────────────────────────
-# Serve generated PDFs at /static/notices/{filename}.pdf
-app.mount(
-    "/static",
-    StaticFiles(directory=str(_STATIC_ROOT)),
-    name="static",
-)
+# ── Security Headers Middleware (OWASP A05) ───────────────────────────────────
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next) -> Response:
+    """Inject standard defensive HTTP headers against sniffing, clickjacking, and XSS."""
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if not settings.DEBUG:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    return response
+
+
+# ── Global Unhandled Exception Sanitization (OWASP A05) ──────────────────────
+
+@app.exception_handler(Exception)
+async def unhandled_exception_sanitizer(request: Request, exc: Exception) -> JSONResponse:
+    """Ensure internal database or RPC errors do not leak stack traces to callers."""
+    log.exception("Unhandled server exception on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal error occurred while processing the request. Investigation ID logged."},
+    )
 
 
 # ── API Routers ────────────────────────────────────────────────────────────────

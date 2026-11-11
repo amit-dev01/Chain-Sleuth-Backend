@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "ChainSleuth"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    ENABLE_DOCS: bool = True         # Set to False in production to disable /docs & /redoc
     CORS_ORIGINS: str = ""           # Comma-separated extra allowed origins (e.g. https://chainsleuth.onrender.com)
 
     @property

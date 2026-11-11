@@ -14,9 +14,10 @@ import zipfile
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
+from app.core.auth import get_current_user
 from app.core.database import batch_update_wallet_nodes, get_case_by_id
 from app.core.database import list_cases as db_list_cases
 from app.engine.bridge_resolver import scan_edges_for_bridge_hops
@@ -52,7 +53,11 @@ from app.models.schemas import (
 )
 
 log    = logging.getLogger(__name__)
-router = APIRouter(prefix="/cases", tags=["Cases"])
+router = APIRouter(
+    prefix="/cases",
+    tags=["Cases"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # ── Helper: reconstruct Pydantic models from Neo4j raw dicts ──────────────────
