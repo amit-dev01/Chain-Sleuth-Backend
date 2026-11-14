@@ -48,64 +48,61 @@ def generate_recommendations(
 
         if mins_elapsed <= 45:
             sla_alert = (
-                f"⚡ CRITICAL 30-MIN CASH-OUT WINDOW: Latest on-chain transfer occurred "
-                f"~{mins_elapsed} minutes ago. High probability of immediate P2P/fiat liquidation. "
-                f"Serve Section 94 BNSS freeze notice immediately to prevent irreversible loss."
+                f"⚡ HIGH URGENCY: Latest transaction recorded ~{mins_elapsed} minutes ago. "
+                f"Immediate risk of asset transfer or liquidation. Serve compliance freeze notice "
+                f"to prevent asset movement."
             )
         elif mins_elapsed <= 180:
             hours_elapsed = max(1, mins_elapsed // 60)
             sla_alert = (
-                f"⚠️ HIGH URGENCY: Activity recorded ~{hours_elapsed} hours ago. Off-ramp "
-                f"settlement may still be pending or locked in exchange holding periods. "
-                f"Notify VASP nodal officer immediately."
+                f"⚠️ ACTIVE TIMEFRAME: Activity recorded ~{hours_elapsed} hours ago. Off-ramp "
+                f"settlement may still be pending. Notify compliance officers for identified exchanges."
             )
         else:
             days_elapsed = max(1, mins_elapsed // 1440)
             sla_alert = (
-                f"📋 HISTORICAL FLOW: Trail represents movement from ~{days_elapsed} days ago. "
-                f"Funds likely swept or off-ramped. Serve Section 94 BNSS production notice "
-                f"for complete KYC records, bank accounts, and linked UPI IDs."
+                f"📋 HISTORICAL ACTIVITY: Trail indicates activity from ~{days_elapsed} days ago. "
+                f"Funds likely settled or transferred downstream. Issue formal records request for "
+                f"account identification and transaction histories."
             )
 
     # ── 2. VASP Attribution Directives ────────────────────────────────────────
     if attribution:
         fiu_text = (
-            "FIU-IND Registered VASP"
+            "FIU-Registered VASP"
             if attribution.is_fiu_registered
-            else "Unregistered / Offshore VASP (Requires Interpol / FIU Escalation)"
+            else "Offshore / Unregistered Exchange"
         )
         recs.append(
-            f"1. SERVE LEGAL FREEZE DIRECTIVE: Issue Section 94 BNSS notice to {attribution.vasp_name} "
-            f"({fiu_text}) Nodal Officer at {attribution.nodal_officer_email}. Compel immediate freeze of "
-            f"funds on KYC Deposit Address: {attribution.deposit_address}."
+            f"1. ISSUE COMPLIANCE NOTICE: Direct compliance freeze notice to {attribution.vasp_name} "
+            f"({fiu_text}) legal contact at {attribution.nodal_officer_email}. Request restriction "
+            f"on KYC deposit address: {attribution.deposit_address}."
         )
         recs.append(
-            f"2. REQUISITION KYC & BANK TRAILS: Request full user profile for {attribution.deposit_address} "
-            f"from {attribution.vasp_name}, including national ID (Aadhaar/PAN/Passport), registered phone, "
-            f"login IP audit trails, and INR bank withdrawal / P2P counterpart accounts."
+            f"2. REQUEST KYC & TRANSACTION RECORDS: Request account verification profile for {attribution.deposit_address} "
+            f"from {attribution.vasp_name}, including registered identification, phone, IP access logs, "
+            f"and associated withdrawal settlement records."
         )
         recs.append(
-            f"3. JURISDICTION NOTICE: Note that {attribution.hot_wallet_address} is a shared hot-wallet "
-            f"pool. Direct all asset freeze orders exclusively to deposit address {attribution.deposit_address} "
-            f"to prevent legal disputes or erroneous hot-wallet blockage."
+            f"3. HOT WALLET SEPARATION: Note that {attribution.hot_wallet_address} is an omnibus exchange hot wallet. "
+            f"Direct freeze requests strictly to user deposit address {attribution.deposit_address} to ensure targeted execution."
         )
     else:
         recs.append(
             "1. EXTEND GRAPH TRAVERSAL: No direct exchange deposit identified within current hop limit. "
-            "Increase max_hops or lower value_threshold_pct to track downstream layering."
+            "Increase hop depth or adjust transfer value threshold to continue tracking downstream flow."
         )
 
     # ── 3. Typology-Specific Action Items ─────────────────────────────────────
-    # Check for First Funder / Syndicate Gas Funder
+    # Check for First Funder / Gas Funder
     funder_nodes = [
         n.address for n in nodes
         if "first_funder_match" in n.typologyFlags
     ]
     if funder_nodes:
         recs.append(
-            f"4. SYNDICATE GAS ACTIVATION LEAD: Mule wallet was activated by funder {funder_nodes[0]}. "
-            f"Cross-match this gas funder across NCRP / SAHYOG portals to identify co-linked FIR "
-            f"complaints belonging to the same cybercrime syndicate."
+            f"4. GAS FUNDER IDENTIFICATION: Target address received initial gas funding from {funder_nodes[0]}. "
+            f"Correlate this funding address across incident records to identify related case files."
         )
 
     # Check for Peeling Chain / Layering
@@ -115,9 +112,8 @@ def generate_recommendations(
     ]
     if peel_nodes:
         recs.append(
-            f"5. PEELING-CHAIN LAYERING DETECTED: {len(peel_nodes)} transit wallets identified "
-            f"exhibiting classic peel-chain layering (>85% forward / <15% peel). Evidence of "
-            f"automated laundering tumbler script."
+            f"5. PEELING CHAIN PATTERN: {len(peel_nodes)} transit addresses exhibit sequential peeling behavior "
+            f"(>85% forwarded, <15% routed). Consistent with automated transaction structuring."
         )
 
     # Check for Fan-Out / Smurfing
@@ -127,8 +123,8 @@ def generate_recommendations(
     ]
     if fan_nodes:
         recs.append(
-            f"6. SMURFING / FAN-OUT STRUCTURE: Address {fan_nodes[0]} split funds across multiple "
-            f"parallel outputs to evade AML detection limits. Subpoena logs for all secondary recipients."
+            f"6. FAN-OUT / STRUCTURING PATTERN: Address {fan_nodes[0]} distributed funds across multiple parallel "
+            f"recipient addresses. Request transaction and identity records for linked counterpart accounts."
         )
 
     # Check for Zero-Gas Burners
@@ -138,8 +134,8 @@ def generate_recommendations(
     ]
     if burner_nodes:
         recs.append(
-            f"7. DISPOSABLE BURNER WALLET: Wallet {burner_nodes[0]} operated with zero native gas "
-            f"balance as a disposable transit conduit. Subpoena preceding funder and destination exchange."
+            f"7. UNFUNDED TRANSIT ADDRESS: Address {burner_nodes[0]} operated without native gas balance, "
+            f"relying on external fee sponsorship. Trace preceding funder address and downstream destinations."
         )
 
     # Check for DEX Swap
@@ -149,14 +145,14 @@ def generate_recommendations(
     ]
     if dex_nodes:
         recs.append(
-            f"8. DEFI / DEX LIQUIDITY SWAP DETECTED: Address {dex_nodes[0]} interacted with a decentralized "
-            f"exchange (DEX) pool router. Query on-chain swap events to extract the swapped token contract and recipient address."
+            f"8. DECENTRALIZED EXCHANGE (DEX) INTERACTION: Address {dex_nodes[0]} interacted with a decentralized "
+            f"exchange router. Query on-chain swap events to extract the swapped asset contract and destination address."
         )
 
     # ── 4. Court Admissibility Protocol ───────────────────────────────────────
     recs.append(
-        "9. DIGITAL EVIDENCE PROTOCOL: Generate Section 63 BSA Digital Evidence Certificate and embed "
-        "the deterministic SHA-256 integrity seal in the case diary for courtroom admissibility."
+        "9. EVIDENCE VERIFICATION: Generate digital evidence verification hash (SHA-256) to maintain "
+        "chain-of-custody integrity for case documentation."
     )
 
     return recs, sla_alert
