@@ -98,7 +98,7 @@ Extract the following fields and return ONLY a valid JSON object — no markdown
 
 {{
   "suspect_wallet_address": "<blockchain address if mentioned, else null>",
-  "blockchain_type": "<one of: tron, solana, ethereum — based on address format or context; else null>",
+  "blockchain_type": "<one of: tron, solana, ethereum, base, bitcoin — based on address format or context; else null>",
   "max_trace_hops": <integer 1-10 based on transaction chain complexity described; use 5 if unclear>,
   "estimated_loss_inr": <numeric INR amount if mentioned, else null>,
   "summary": "<one concise sentence summarising the complaint>",
@@ -107,8 +107,9 @@ Extract the following fields and return ONLY a valid JSON object — no markdown
 
 Rules:
 - TRON addresses start with 'T' and are 34 characters long (Base58).
-- Ethereum/EVM addresses start with '0x' and are 42 characters long.
+- Base and Ethereum/EVM addresses start with '0x' and are 42 characters long. If Base, Basescan, or Coinbase L2 is mentioned, return 'base'; otherwise for EVM return 'ethereum'.
 - Solana addresses are 32-44 Base58 characters with no '0x' prefix.
+- Bitcoin addresses start with '1', '3', or 'bc1'.
 - If the blockchain type cannot be determined from the address, infer from context keywords (e.g., 'TRC-20', 'USDT on TRON', 'MetaMask', 'Phantom').
 - For max_trace_hops: use 3 for simple single-hop fraud, 5 for multi-layer layering, 7-10 for complex mixing/tumbler cases.
 - Return null for any field you cannot extract with reasonable confidence.
