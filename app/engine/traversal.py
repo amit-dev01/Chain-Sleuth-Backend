@@ -37,6 +37,7 @@ from app.models.schemas import (
     TransferEdge,
     WalletNode,
 )
+from app.vasp.registry import is_hot_wallet
 
 log = logging.getLogger(__name__)
 
@@ -63,11 +64,21 @@ def _make_wallet_node(
     )
 
 
+def _normalize_ts_sec(raw_ts: Any) -> float:
+    """Normalize raw millisecond or second timestamp to UTC seconds float."""
+    if not raw_ts:
+        return 0.0
+    try:
+        val = float(raw_ts)
+        return val / 1000.0 if val > 1e11 else val
+    except Exception:
+        return 0.0
+
+
 def _make_transfer_edge(transfer: dict) -> TransferEdge:
     raw_ts = transfer.get("timestamp") or 0
-    if isinstance(raw_ts, (int, float)):
-        # Normalize milliseconds to seconds if needed
-        ts_sec = raw_ts / 1000.0 if raw_ts > 1e11 else float(raw_ts)
+    ts_sec = _normalize_ts_sec(raw_ts)
+    if ts_sec > 0:
         try:
             ts_dt = datetime.fromtimestamp(ts_sec, tz=UTC)
         except Exception:
@@ -154,9 +165,9 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
     node_map:     dict[str, WalletNode]    = {}
     edge_map:     dict[str, TransferEdge]  = {}
 
-    # BFS queue: (address, current_depth)
-    queue: deque[tuple[str, int]] = deque()
-    queue.append((request.suspect_address, 0))
+    # BFS queue: (address, current_depth, min_timestamp_sec)
+    queue: deque[tuple[str, int, float]] = deque()
+    queue.append((request.suspect_address, 0, 0.0))
     visited.add(request.suspect_address.lower())
 
     # Seed the root wallet
@@ -178,7 +189,7 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
 
     # ── BFS loop ──────────────────────────────────────────────────────────────
     while queue:
-        current_address, depth = queue.popleft()
+        current_address, depth, min_ts_sec = queue.popleft()
 
         if depth >= max_hops:
             log.debug("Max depth %d reached at %s – not expanding.", max_hops, current_address)
@@ -189,7 +200,7 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
             break
 
         # ── Fetch outbound transfers for the current chain ────────────────────
-        log.debug("Fetching transfers: depth=%d address=%s chain=%s", depth, current_address, chain)
+        log.debug("Fetching transfers: depth=%d address=%s chain=%s min_ts=%.0f", depth, current_address, chain, min_ts_sec)
         try:
             transfers = await _fetch_transfers(current_address, chain)
         except Exception as exc:
@@ -199,20 +210,58 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
         if not transfers:
             continue
 
-        # ── Value-weighted filtering ──────────────────────────────────────────
-        total_volume = sum(t["value"] for t in transfers)
-        cutoff_value = total_volume * threshold
+        # ── Temporal Causal Filtering ─────────────────────────────────────────
+        # An outbound hop is only part of the fund trail if it occurred at or after
+        # the arrival timestamp of the funds at this node (depth > 0).
+        if min_ts_sec > 0.0:
+            filtered_transfers = [
+                t for t in transfers
+                if _normalize_ts_sec(t.get("timestamp")) >= min_ts_sec
+            ]
+            if filtered_transfers:
+                transfers = filtered_transfers
+            else:
+                # 1-hour grace window for cross-node block time variance
+                grace_ts = min_ts_sec - 3600.0
+                transfers = [
+                    t for t in transfers
+                    if _normalize_ts_sec(t.get("timestamp")) >= grace_ts
+                ]
 
-        # Sort by value DESC (high-value hops explored first)
-        significant = sorted(
-            [t for t in transfers if t["value"] >= cutoff_value],
-            key=lambda t: t["value"],
+        if not transfers:
+            continue
+
+        # ── Adaptive Smurfing-Aware Volume Pruning ────────────────────────────
+        sorted_transfers = sorted(
+            transfers,
+            key=lambda t: float(t.get("value") or 0.0),
             reverse=True,
         )
+        total_volume = sum(float(t.get("value") or 0.0) for t in sorted_transfers)
+
+        if total_volume <= 0:
+            continue
+
+        dust_floor = 10.0
+        target_cumulative = total_volume * 0.85
+        per_tx_cutoff = total_volume * threshold
+
+        accumulated = 0.0
+        significant = []
+
+        for t in sorted_transfers:
+            val = float(t.get("value") or 0.0)
+            if val < dust_floor and val < per_tx_cutoff:
+                continue
+            significant.append(t)
+            accumulated += val
+            # Once 85% of volume is captured and we have at least 5 paths, drop remaining long-tail noise
+            if accumulated >= target_cumulative and len(significant) >= 5 and val < per_tx_cutoff:
+                break
 
         log.debug(
-            "  %s → %d transfers, total=%.2f USDT, cutoff=%.2f, surviving=%d",
-            current_address, len(transfers), total_volume, cutoff_value, len(significant),
+            "  %s → %d transfers, total=%.2f, surviving=%d",
+            current_address, len(transfers), total_volume, len(significant),
         )
 
         # ── Process each significant transfer ─────────────────────────────────
@@ -222,6 +271,12 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
         for transfer in significant:
             recipient = transfer["to_address"]
             tx_hash   = transfer["tx_hash"]
+            tx_ts_sec = _normalize_ts_sec(transfer.get("timestamp"))
+            tx_dt = (
+                datetime.fromtimestamp(tx_ts_sec, tz=UTC)
+                if tx_ts_sec > 0
+                else datetime.now(UTC)
+            )
 
             # ── Build / update node ───────────────────────────────────────────
             if recipient not in node_map:
@@ -237,6 +292,15 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
                     "firstSeen": node.firstSeen,
                 })
 
+            # ── Terminal Sink Detection (Preventing Exchange Hairballs) ───────
+            is_terminal_sink = is_hot_wallet(recipient)
+            if is_terminal_sink:
+                node_map[recipient].isVasp = True
+                log.info(
+                    "Terminal exchange sink identified at %s. Halting downstream expansion on this path.",
+                    recipient,
+                )
+
             # ── Build / update edge ───────────────────────────────────────────
             if tx_hash not in edge_map:
                 edge = _make_transfer_edge(transfer)
@@ -249,15 +313,13 @@ async def run_bfs_trace(request: TraceRequest) -> TraceResult:
                     "txHash":      tx_hash,
                     "value":       transfer["value"],
                     "token":       transfer["token"],
-                    "timestamp":   datetime.fromtimestamp(
-                        transfer["timestamp"], tz=UTC
-                    ).isoformat(),
+                    "timestamp":   tx_dt.isoformat(),
                 })
 
-            # ── Enqueue recipient for next BFS level ──────────────────────────
-            if recipient.lower() not in visited:
+            # ── Enqueue recipient for next BFS level (if not terminal sink) ──
+            if not is_terminal_sink and recipient.lower() not in visited:
                 visited.add(recipient.lower())
-                queue.append((recipient, depth + 1))
+                queue.append((recipient, depth + 1, tx_ts_sec))
 
         # Write nodes first, then edges (guarantees referential integrity and eliminates deadlocks)
         if nodes_to_merge:
